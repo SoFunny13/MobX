@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генератор отчетов ФМС</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="nav">
+        <a href="/" class="nav-link active">Отчет</a>
+        <a href="/offers" class="nav-link">Оферы</a>
+        <a href="/sources" class="nav-link">Источники</a>
+    </nav>
+
+    <div class="container">
+        <h1>Генератор отчетов ФМС</h1>
+
+        <!-- Upload section -->
+        <div class="card">
+            <h2>Загрузка статистики</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="report-date">Дата отчета</label>
+                    <input type="date" id="report-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="exchange-rate">Курс USD (руб.)</label>
+                    <input type="number" id="exchange-rate" step="0.01" min="0.01" placeholder="90.50" required>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 16px;">
+                <label for="stats-file">Файл статистики (.xlsx)</label>
+                <input type="file" id="stats-file" accept=".xlsx" required>
+            </div>
+            <button class="btn btn-primary" id="btn-upload" onclick="uploadFile()">
+                Загрузить и проверить
+            </button>
+            <div id="upload-status"></div>
+        </div>
+
+        <!-- Resolution section (hidden by default) -->
+        <div class="card hidden" id="resolution-card">
+            <h2>Сопоставление ID</h2>
+            <div id="match-info"></div>
+
+            <div id="unmatched-offers-section" class="resolution-section hidden">
+                <h3>Не найдены оферы</h3>
+                <table class="resolution-table">
+                    <thead>
+                        <tr>
+                            <th>Название в файле</th>
+                            <th>ID офера</th>
+                        </tr>
+                    </thead>
+                    <tbody id="unmatched-offers-body"></tbody>
+                </table>
+            </div>
+
+            <div id="unmatched-sources-section" class="resolution-section hidden">
+                <h3>Не найдены источники</h3>
+                <table class="resolution-table">
+                    <thead>
+                        <tr>
+                            <th>Название в файле</th>
+                            <th>ID источника</th>
+                        </tr>
+                    </thead>
+                    <tbody id="unmatched-sources-body"></tbody>
+                </table>
+            </div>
+
+            <button class="btn btn-confirm hidden" id="btn-confirm" onclick="confirmIds()">
+                Подтвердить ID
+            </button>
+        </div>
+
+        <!-- Download section (hidden by default) -->
+        <div class="card hidden" id="download-card">
+            <h2>Отчет готов</h2>
+            <p class="match-summary" id="report-summary"></p>
+            <button class="btn btn-success" onclick="downloadReport()">
+                Скачать отчет
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let state = {
+            statsRows: [],
+            offerIds: {},
+            sourceIds: {},
+            manualOfferIds: {},
+            manualSourceIds: {},
+            unmatchedOffers: [],
+            unmatchedSources: [],
+            date: '',
+            exchangeRate: 0,
+        };
+
+        function showStatus(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.className = 'status status-' + type;
+            el.textContent = message;
+            el.classList.remove('hidden');
+        }
+
+        function clearStatus(elementId) {
+            const el = document.getElementById(elementId);
+            el.className = '';
+            el.textContent = '';
+        }
+
+        async function uploadFile() {
+            const dateInput = document.getElementById('report-date');
+            const rateInput = document.getElementById('exchange-rate');
+            const fileInput = document.getElementById('stats-file');
+            const btn = document.getElementById('btn-upload');
+
+            // Validate
+            if (!dateInput.value) {
+                showStatus('upload-status', 'Укажите дату отчета', 'error');
+                return;
+            }
+            if (!rateInput.value || parseFloat(rateInput.value) <= 0) {
+                showStatus('upload-status', 'Укажите корректный курс доллара', 'error');
+                return;
+            }
+            if (!fileInput.files[0]) {
+                showStatus('upload-status', 'Выберите файл статистики', 'error');
+                return;
+            }
+
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('date', dateInput.value);
+            formData.append('exchange_rate', rateInput.value);
+
+            // Update UI
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Загрузка...';
+            clearStatus('upload-status');
+
+            // Hide previous results
+            document.getElementById('resolution-card').classList.add('hidden');
+            document.getElementById('download-card').classList.add('hidden');
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showStatus('upload-status', data.error || 'Ошибка загрузки', 'error');
+                    return;
+                }
+
+                // Save state
+                state.statsRows = data.stats_rows;
+                state.offerIds = data.matched_offers;
+                state.sourceIds = data.matched_sources;
+                state.unmatchedOffers = data.unmatched_offers;
+                state.unmatchedSources = data.unmatched_sources;
+                state.date = dateInput.value;
+                state.exchangeRate = parseFloat(rateInput.value);
+
+                const totalOffers = Object.keys(data.matched_offers).length + data.unmatched_offers.length;
+                const totalSources = Object.keys(data.matched_sources).length + data.unmatched_sources.length;
+
+                // Show resolution card
+                const resCard = document.getElementById('resolution-card');
+                resCard.classList.remove('hidden');
+
+                // Match info
+                const matchInfo = document.getElementById('match-info');
+                matchInfo.innerHTML = `
+                    <p class="match-summary">Оферы: найдено ${Object.keys(data.matched_offers).length} из ${totalOffers}</p>
+                    <p class="match-summary">Источники: найдено ${Object.keys(data.matched_sources).length} из ${totalSources}</p>
+                    <p class="match-summary">Строк данных: ${data.stats_rows.length}</p>
+                `;
+
+                const hasUnmatched = data.unmatched_offers.length > 0 || data.unmatched_sources.length > 0;
+
+                // Render unmatched offers
+                if (data.unmatched_offers.length > 0) {
+                    const section = document.getElementById('unmatched-offers-section');
+                    section.classList.remove('hidden');
+                    const tbody = document.getElementById('unmatched-offers-body');
+                    tbody.innerHTML = data.unmatched_offers.map(name => `
+                        <tr>
+                            <td>${escapeHtml(name)}</td>
+                            <td><input type="number" class="offer-id-input" data-name="${escapeAttr(name)}" placeholder="ID"></td>
+                        </tr>
+                    `).join('');
+                } else {
+                    document.getElementById('unmatched-offers-section').classList.add('hidden');
+                }
+
+                // Render unmatched sources
+                if (data.unmatched_sources.length > 0) {
+                    const section = document.getElementById('unmatched-sources-section');
+                    section.classList.remove('hidden');
+                    const tbody = document.getElementById('unmatched-sources-body');
+                    tbody.innerHTML = data.unmatched_sources.map(name => `
+                        <tr>
+                            <td>${escapeHtml(name)}</td>
+                            <td><input type="number" class="source-id-input" data-name="${escapeAttr(name)}" placeholder="ID"></td>
+                        </tr>
+                    `).join('');
+                } else {
+                    document.getElementById('unmatched-sources-section').classList.add('hidden');
+                }
+
+                // Show confirm button or go straight to download
+                if (hasUnmatched) {
+                    document.getElementById('btn-confirm').classList.remove('hidden');
+                    document.getElementById('download-card').classList.add('hidden');
+                    showStatus('upload-status', 'Заполните недостающие ID и нажмите "Подтвердить"', 'info');
+                } else {
+                    document.getElementById('btn-confirm').classList.add('hidden');
+                    showDownload();
+                    showStatus('upload-status', 'Все ID найдены автоматически', 'success');
+                }
+
+            } catch (err) {
+                showStatus('upload-status', 'Ошибка сети: ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Загрузить и проверить';
+            }
+        }
+
+        function confirmIds() {
+            state.manualOfferIds = {};
+            state.manualSourceIds = {};
+
+            // Read manual offer IDs
+            const offerInputs = document.querySelectorAll('.offer-id-input');
+            for (const input of offerInputs) {
+                const val = input.value.trim();
+                if (!val) {
+                    showStatus('upload-status', `Укажите ID для офера: ${input.dataset.name}`, 'error');
+                    input.focus();
+                    return;
+                }
+                const id = parseInt(val);
+                state.offerIds[input.dataset.name] = id;
+                state.manualOfferIds[input.dataset.name] = id;
+            }
+
+            // Read manual source IDs
+            const sourceInputs = document.querySelectorAll('.source-id-input');
+            for (const input of sourceInputs) {
+                const val = input.value.trim();
+                if (!val) {
+                    showStatus('upload-status', `Укажите ID для источника: ${input.dataset.name}`, 'error');
+                    input.focus();
+                    return;
+                }
+                const id = parseInt(val);
+                state.sourceIds[input.dataset.name] = id;
+                state.manualSourceIds[input.dataset.name] = id;
+            }
+
+            // Save mappings to server immediately
+            fetch('/save-mappings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    offers: state.manualOfferIds,
+                    sources: state.manualSourceIds,
+                }),
+            });
+
+            showDownload();
+            showStatus('upload-status', 'Все ID заполнены и сохранены', 'success');
+        }
+
+        function showDownload() {
+            const card = document.getElementById('download-card');
+            card.classList.remove('hidden');
+            document.getElementById('report-summary').textContent =
+                `${state.statsRows.length} строк, дата: ${state.date}, курс: ${state.exchangeRate} руб./USD`;
+        }
+
+        async function downloadReport() {
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: state.date,
+                        exchange_rate: state.exchangeRate,
+                        stats_rows: state.statsRows,
+                        offer_ids: state.offerIds,
+                        source_ids: state.sourceIds,
+                        manual_offer_ids: state.manualOfferIds,
+                        manual_source_ids: state.manualSourceIds,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    alert(err.error || 'Ошибка генерации отчета');
+                    return;
+                }
+
+                // Trigger download
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `report_${state.date}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+
+            } catch (err) {
+                alert('Ошибка сети: ' + err.message);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeAttr(text) {
+            return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+    </script>
+</body>
+</html>

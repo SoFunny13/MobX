@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} — ФМС</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="nav">
+        <a href="/" class="nav-link">Отчет</a>
+        <a href="/offers" class="nav-link {{ 'active' if type == 'offers' }}">Оферы</a>
+        <a href="/sources" class="nav-link {{ 'active' if type == 'sources' }}">Источники</a>
+    </nav>
+
+    <div class="container">
+        <h1>{{ title }}</h1>
+
+        <!-- Add form -->
+        <div class="card">
+            <h2>Добавить</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>{{ name_label }}</label>
+                    <input type="text" id="new-name" placeholder="Название">
+                </div>
+                <div class="form-group">
+                    <label>{{ id_label }}</label>
+                    <input type="number" id="new-id" placeholder="ID">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="addItem()">Добавить</button>
+            <div id="add-status"></div>
+        </div>
+
+        <!-- Table -->
+        <div class="card">
+            <h2>Список (<span id="count">0</span>)</h2>
+            <table class="ref-table">
+                <thead>
+                    <tr>
+                        <th>{{ id_label }}</th>
+                        <th>{{ name_label }}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const TYPE = '{{ type }}';
+
+        async function loadData() {
+            const res = await fetch(`/api/${TYPE}`);
+            const items = await res.json();
+            const tbody = document.getElementById('table-body');
+            document.getElementById('count').textContent = items.length;
+            tbody.innerHTML = items.map(item => `
+                <tr>
+                    <td>${item.id}</td>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td><button class="btn-delete" onclick="deleteItem(${item.id})">Удалить</button></td>
+                </tr>
+            `).join('');
+        }
+
+        async function addItem() {
+            const nameInput = document.getElementById('new-name');
+            const idInput = document.getElementById('new-id');
+            const name = nameInput.value.trim();
+            const id = idInput.value.trim();
+
+            if (!name || !id) {
+                showStatus('add-status', 'Заполните оба поля', 'error');
+                return;
+            }
+
+            const res = await fetch(`/api/${TYPE}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, id: parseInt(id) }),
+            });
+
+            if (res.ok) {
+                nameInput.value = '';
+                idInput.value = '';
+                showStatus('add-status', 'Добавлено', 'success');
+                loadData();
+            } else {
+                const err = await res.json();
+                showStatus('add-status', err.error || 'Ошибка', 'error');
+            }
+        }
+
+        async function deleteItem(id) {
+            if (!confirm('Удалить запись с ID ' + id + '?')) return;
+            await fetch(`/api/${TYPE}/${id}`, { method: 'DELETE' });
+            loadData();
+        }
+
+        function showStatus(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.className = 'status status-' + type;
+            el.textContent = message;
+            setTimeout(() => { el.className = ''; el.textContent = ''; }, 3000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
