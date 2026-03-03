@@ -44,8 +44,10 @@ function saveSources(arr) {
 }
 
 function addOffer(id, name) {
-    const offers = getOffers() || [];
-    offers.push({ id: parseInt(id), name: name.trim() });
+    let offers = getOffers() || [];
+    const numId = parseInt(id);
+    offers = offers.filter(o => o.id !== numId);
+    offers.push({ id: numId, name: name.trim() });
     saveOffers(offers);
 }
 
@@ -56,8 +58,10 @@ function deleteOffer(id) {
 }
 
 function addSource(id, name) {
-    const sources = getSources() || [];
-    sources.push({ id: parseInt(id), name: name.trim() });
+    let sources = getSources() || [];
+    const numId = parseInt(id);
+    sources = sources.filter(s => s.id !== numId);
+    sources.push({ id: numId, name: name.trim() });
     saveSources(sources);
 }
 
@@ -232,7 +236,7 @@ function matchSource(statsName, sourcesDict) {
     if (sourcesDict[key]) return sourcesDict[key].id;
 
     // 4. Strip _int / _int_contract suffix
-    const base = raw.toLowerCase().replace('_int_contract', '').replace('_int', '').trim();
+    const base = raw.toLowerCase().replace(/_int_contract$/, '').replace(/_int$/, '').trim();
     for (const [refName, ref] of Object.entries(sourcesDict)) {
         const refLower = refName.toLowerCase();
         if (base === refLower) return ref.id;
@@ -261,8 +265,8 @@ function parseStatsFile(arrayBuffer) {
             if (val && typeof val === 'string') {
                 const trimmed = val.trim();
                 if (trimmed === STATS_HEADERS.offer) { offerCol = c; headerRow = r; }
-                if (trimmed === STATS_HEADERS.source) { sourceCol = c; }
-                if (trimmed === STATS_HEADERS.cost) { costCol = c; }
+                if (trimmed === STATS_HEADERS.source) { sourceCol = c; headerRow = Math.max(headerRow || 0, r); }
+                if (trimmed === STATS_HEADERS.cost) { costCol = c; headerRow = Math.max(headerRow || 0, r); }
             }
         }
     }
@@ -304,7 +308,7 @@ function generateReport(dateStr, exchangeRate, statsRows, offerIdMap, sourceIdMa
         const sourceId = sourceIdMap[row.source_name] ?? '';
         const costRub = parseFloat(row.cost_rub) || 0;
         let cost;
-        if (NO_CONVERT_SOURCES.has(row.source_name)) {
+        if (NO_CONVERT_SOURCES.has(row.source_name.toLowerCase())) {
             cost = Math.round(costRub);
         } else {
             cost = exchangeRate ? Math.round(costRub / exchangeRate) : 0;
@@ -329,7 +333,8 @@ function escapeHtml(text) {
 }
 
 function escapeAttr(text) {
-    return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return String(text || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function showStatus(elementId, message, type) {
