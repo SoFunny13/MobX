@@ -27,12 +27,16 @@ const SOURCES_COL_NAME = 1;
 // ============================================================
 function getOffers() {
     const data = localStorage.getItem('fms_offers');
-    return data ? JSON.parse(data) : null;
+    if (!data) return null;
+    try { return JSON.parse(data); }
+    catch (e) { console.error('Failed to parse fms_offers:', e); return null; }
 }
 
 function getSources() {
     const data = localStorage.getItem('fms_sources');
-    return data ? JSON.parse(data) : null;
+    if (!data) return null;
+    try { return JSON.parse(data); }
+    catch (e) { console.error('Failed to parse fms_sources:', e); return null; }
 }
 
 function saveOffers(arr) {
@@ -93,6 +97,7 @@ async function initReferenceData() {
     if (!getOffers()) {
         try {
             const resp = await fetch(OFFERS_XLSX);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
             const buf = await resp.arrayBuffer();
             const wb = XLSX.read(buf, { type: 'array' });
             const ws = wb.Sheets[OFFERS_SHEET];
@@ -115,6 +120,7 @@ async function initReferenceData() {
     if (!getSources()) {
         try {
             const resp = await fetch(SOURCES_XLSX);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
             const buf = await resp.arrayBuffer();
             const wb = XLSX.read(buf, { type: 'array' });
             const ws = wb.Sheets[SOURCES_SHEET];
@@ -140,7 +146,9 @@ async function initReferenceData() {
 // ============================================================
 function getLearnedMappings() {
     const data = localStorage.getItem('fms_learned');
-    return data ? JSON.parse(data) : { offers: {}, sources: {} };
+    if (!data) return { offers: {}, sources: {} };
+    try { return JSON.parse(data); }
+    catch (e) { console.error('Failed to parse fms_learned:', e); return { offers: {}, sources: {} }; }
 }
 
 function saveLearnedMappings(mappings) {
@@ -264,9 +272,9 @@ function parseStatsFile(arrayBuffer) {
             const val = row[c];
             if (val && typeof val === 'string') {
                 const trimmed = val.trim();
-                if (trimmed === STATS_HEADERS.offer) { offerCol = c; headerRow = r; }
-                if (trimmed === STATS_HEADERS.source) { sourceCol = c; headerRow = Math.max(headerRow || 0, r); }
-                if (trimmed === STATS_HEADERS.cost) { costCol = c; headerRow = Math.max(headerRow || 0, r); }
+                if (trimmed === STATS_HEADERS.offer) { offerCol = c; headerRow = Math.max(headerRow ?? -1, r); }
+                if (trimmed === STATS_HEADERS.source) { sourceCol = c; headerRow = Math.max(headerRow ?? -1, r); }
+                if (trimmed === STATS_HEADERS.cost) { costCol = c; headerRow = Math.max(headerRow ?? -1, r); }
             }
         }
     }
@@ -303,6 +311,9 @@ function parseStatsFile(arrayBuffer) {
 // Report Generation
 // ============================================================
 function generateReport(dateStr, exchangeRate, statsRows, offerIdMap, sourceIdMap) {
+    if (!exchangeRate || exchangeRate <= 0) {
+        throw new Error('Курс доллара должен быть больше нуля');
+    }
     const data = statsRows.map(row => {
         const offerId = offerIdMap[row.offer_name] ?? '';
         const sourceId = sourceIdMap[row.source_name] ?? '';
@@ -339,6 +350,7 @@ function escapeAttr(text) {
 
 function showStatus(elementId, message, type) {
     const el = document.getElementById(elementId);
+    if (!el) return;
     el.className = 'status status-' + type;
     el.textContent = message;
     el.classList.remove('hidden');
@@ -346,6 +358,7 @@ function showStatus(elementId, message, type) {
 
 function clearStatus(elementId) {
     const el = document.getElementById(elementId);
+    if (!el) return;
     el.className = '';
     el.textContent = '';
 }

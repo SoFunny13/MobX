@@ -102,7 +102,7 @@
         };
 
         // Init reference data on page load
-        initReferenceData();
+        initReferenceData().catch(err => console.error('Ошибка инициализации:', err));
 
         async function uploadFile() {
             const dateInput = document.getElementById('report-date');

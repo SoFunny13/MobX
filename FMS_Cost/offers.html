@@ -52,7 +52,12 @@
     </div>
 
     <script>
-        initReferenceData().then(() => loadData());
+        initReferenceData()
+            .then(() => loadData())
+            .catch(err => {
+                console.error('Ошибка инициализации:', err);
+                loadData();
+            });
 
         function loadData() {
             const items = getOffers() || [];
@@ -60,9 +65,9 @@
             document.getElementById('count').textContent = sorted.length;
             document.getElementById('table-body').innerHTML = sorted.map(item => `
                 <tr>
-                    <td>${item.id}</td>
+                    <td>${escapeHtml(String(item.id))}</td>
                     <td>${escapeHtml(item.name)}</td>
-                    <td><button class="btn-delete" onclick="removeItem(${item.id})">Удалить</button></td>
+                    <td><button class="btn-delete" onclick="removeItem(${parseInt(item.id)})">Удалить</button></td>
                 </tr>
             `).join('');
         }
@@ -78,7 +83,13 @@
                 return;
             }
 
-            addOffer(parseInt(id), name);
+            const parsedId = parseInt(id, 10);
+            if (isNaN(parsedId) || parsedId <= 0) {
+                showStatusTimed('add-status', 'Укажите корректный ID (положительное число)', 'error');
+                return;
+            }
+
+            addOffer(parsedId, name);
             nameInput.value = '';
             idInput.value = '';
             showStatusTimed('add-status', 'Добавлено', 'success');
