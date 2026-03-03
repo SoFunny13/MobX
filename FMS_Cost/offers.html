@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Оферы — ФМС</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+</head>
+<body>
+    <nav class="nav">
+        <a href="index.html" class="nav-link">Отчет</a>
+        <a href="offers.html" class="nav-link active">Оферы</a>
+        <a href="sources.html" class="nav-link">Источники</a>
+    </nav>
+
+    <div class="container">
+        <h1>Оферы</h1>
+
+        <!-- Add form -->
+        <div class="card">
+            <h2>Добавить</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Название офера</label>
+                    <input type="text" id="new-name" placeholder="Название">
+                </div>
+                <div class="form-group">
+                    <label>ID офера</label>
+                    <input type="number" id="new-id" placeholder="ID">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="addItem()">Добавить</button>
+            <div id="add-status"></div>
+        </div>
+
+        <!-- Table -->
+        <div class="card">
+            <h2>Список (<span id="count">0</span>)</h2>
+            <table class="ref-table">
+                <thead>
+                    <tr>
+                        <th>ID офера</th>
+                        <th>Название офера</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        initReferenceData().then(() => loadData());
+
+        function loadData() {
+            const items = getOffers() || [];
+            const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
+            document.getElementById('count').textContent = sorted.length;
+            document.getElementById('table-body').innerHTML = sorted.map(item => `
+                <tr>
+                    <td>${item.id}</td>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td><button class="btn-delete" onclick="removeItem(${item.id})">Удалить</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function addItem() {
+            const nameInput = document.getElementById('new-name');
+            const idInput = document.getElementById('new-id');
+            const name = nameInput.value.trim();
+            const id = idInput.value.trim();
+
+            if (!name || !id) {
+                showStatusTimed('add-status', 'Заполните оба поля', 'error');
+                return;
+            }
+
+            addOffer(parseInt(id), name);
+            nameInput.value = '';
+            idInput.value = '';
+            showStatusTimed('add-status', 'Добавлено', 'success');
+            loadData();
+        }
+
+        function removeItem(id) {
+            if (!confirm('Удалить запись с ID ' + id + '?')) return;
+            deleteOffer(id);
+            loadData();
+        }
+    </script>
+</body>
+</html>

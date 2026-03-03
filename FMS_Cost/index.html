@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Генератор отчетов ФМС</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
 </head>
 <body>
     <nav class="nav">
-        <a href="/" class="nav-link active">Отчет</a>
-        <a href="/offers" class="nav-link">Оферы</a>
-        <a href="/sources" class="nav-link">Источники</a>
+        <a href="index.html" class="nav-link active">Отчет</a>
+        <a href="offers.html" class="nav-link">Оферы</a>
+        <a href="sources.html" class="nav-link">Источники</a>
     </nav>
 
     <div class="container">
@@ -99,18 +101,8 @@
             exchangeRate: 0,
         };
 
-        function showStatus(elementId, message, type) {
-            const el = document.getElementById(elementId);
-            el.className = 'status status-' + type;
-            el.textContent = message;
-            el.classList.remove('hidden');
-        }
-
-        function clearStatus(elementId) {
-            const el = document.getElementById(elementId);
-            el.className = '';
-            el.textContent = '';
-        }
+        // Init reference data on page load
+        initReferenceData();
 
         async function uploadFile() {
             const dateInput = document.getElementById('report-date');
@@ -132,15 +124,9 @@
                 return;
             }
 
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            formData.append('date', dateInput.value);
-            formData.append('exchange_rate', rateInput.value);
-
             // Update UI
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span>Загрузка...';
+            btn.innerHTML = '<span class="spinner"></span>Обработка...';
             clearStatus('upload-status');
 
             // Hide previous results
@@ -148,50 +134,77 @@
             document.getElementById('download-card').classList.add('hidden');
 
             try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData,
-                });
+                // Read file
+                const file = fileInput.files[0];
+                const arrayBuffer = await file.arrayBuffer();
 
-                const data = await response.json();
-
-                if (!response.ok) {
-                    showStatus('upload-status', data.error || 'Ошибка загрузки', 'error');
+                // Parse stats
+                const result = parseStatsFile(arrayBuffer);
+                if (result.error) {
+                    showStatus('upload-status', result.error, 'error');
                     return;
                 }
 
+                // Build reference dicts
+                const offers = getOffers() || [];
+                const sources = getSources() || [];
+                const offersDict = buildOffersDict(offers);
+                const sourcesDict = buildSourcesDict(sources);
+
+                // Match
+                const uniqueOffers = [...new Set(result.statsRows.map(r => r.offer_name))].sort();
+                const uniqueSources = [...new Set(result.statsRows.map(r => r.source_name))].sort();
+
+                const matchedOffers = {};
+                const unmatchedOffers = [];
+                for (const name of uniqueOffers) {
+                    const id = matchOffer(name, offersDict);
+                    if (id !== null) {
+                        matchedOffers[name] = id;
+                    } else {
+                        unmatchedOffers.push(name);
+                    }
+                }
+
+                const matchedSources = {};
+                const unmatchedSources = [];
+                for (const name of uniqueSources) {
+                    const id = matchSource(name, sourcesDict);
+                    if (id !== null) {
+                        matchedSources[name] = id;
+                    } else {
+                        unmatchedSources.push(name);
+                    }
+                }
+
                 // Save state
-                state.statsRows = data.stats_rows;
-                state.offerIds = data.matched_offers;
-                state.sourceIds = data.matched_sources;
-                state.unmatchedOffers = data.unmatched_offers;
-                state.unmatchedSources = data.unmatched_sources;
+                state.statsRows = result.statsRows;
+                state.offerIds = matchedOffers;
+                state.sourceIds = matchedSources;
+                state.unmatchedOffers = unmatchedOffers;
+                state.unmatchedSources = unmatchedSources;
                 state.date = dateInput.value;
                 state.exchangeRate = parseFloat(rateInput.value);
 
-                const totalOffers = Object.keys(data.matched_offers).length + data.unmatched_offers.length;
-                const totalSources = Object.keys(data.matched_sources).length + data.unmatched_sources.length;
+                const totalOffers = Object.keys(matchedOffers).length + unmatchedOffers.length;
+                const totalSources = Object.keys(matchedSources).length + unmatchedSources.length;
 
                 // Show resolution card
                 const resCard = document.getElementById('resolution-card');
                 resCard.classList.remove('hidden');
 
-                // Match info
-                const matchInfo = document.getElementById('match-info');
-                matchInfo.innerHTML = `
-                    <p class="match-summary">Оферы: найдено ${Object.keys(data.matched_offers).length} из ${totalOffers}</p>
-                    <p class="match-summary">Источники: найдено ${Object.keys(data.matched_sources).length} из ${totalSources}</p>
-                    <p class="match-summary">Строк данных: ${data.stats_rows.length}</p>
+                document.getElementById('match-info').innerHTML = `
+                    <p class="match-summary">Оферы: найдено ${Object.keys(matchedOffers).length} из ${totalOffers}</p>
+                    <p class="match-summary">Источники: найдено ${Object.keys(matchedSources).length} из ${totalSources}</p>
+                    <p class="match-summary">Строк данных: ${result.statsRows.length}</p>
                 `;
 
-                const hasUnmatched = data.unmatched_offers.length > 0 || data.unmatched_sources.length > 0;
+                const hasUnmatched = unmatchedOffers.length > 0 || unmatchedSources.length > 0;
 
                 // Render unmatched offers
-                if (data.unmatched_offers.length > 0) {
-                    const section = document.getElementById('unmatched-offers-section');
-                    section.classList.remove('hidden');
-                    const tbody = document.getElementById('unmatched-offers-body');
-                    tbody.innerHTML = data.unmatched_offers.map(name => `
+                if (unmatchedOffers.length > 0) {
+                    document.getElementById('unmatched-offers-section').classList.remove('hidden');
+                    document.getElementById('unmatched-offers-body').innerHTML = unmatchedOffers.map(name => `
                         <tr>
                             <td>${escapeHtml(name)}</td>
                             <td><input type="number" class="offer-id-input" data-name="${escapeAttr(name)}" placeholder="ID"></td>
@@ -202,11 +215,9 @@
                 }
 
                 // Render unmatched sources
-                if (data.unmatched_sources.length > 0) {
-                    const section = document.getElementById('unmatched-sources-section');
-                    section.classList.remove('hidden');
-                    const tbody = document.getElementById('unmatched-sources-body');
-                    tbody.innerHTML = data.unmatched_sources.map(name => `
+                if (unmatchedSources.length > 0) {
+                    document.getElementById('unmatched-sources-section').classList.remove('hidden');
+                    document.getElementById('unmatched-sources-body').innerHTML = unmatchedSources.map(name => `
                         <tr>
                             <td>${escapeHtml(name)}</td>
                             <td><input type="number" class="source-id-input" data-name="${escapeAttr(name)}" placeholder="ID"></td>
@@ -216,7 +227,6 @@
                     document.getElementById('unmatched-sources-section').classList.add('hidden');
                 }
 
-                // Show confirm button or go straight to download
                 if (hasUnmatched) {
                     document.getElementById('btn-confirm').classList.remove('hidden');
                     document.getElementById('download-card').classList.add('hidden');
@@ -228,7 +238,7 @@
                 }
 
             } catch (err) {
-                showStatus('upload-status', 'Ошибка сети: ' + err.message, 'error');
+                showStatus('upload-status', 'Ошибка: ' + err.message, 'error');
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Загрузить и проверить';
@@ -267,15 +277,20 @@
                 state.manualSourceIds[input.dataset.name] = id;
             }
 
-            // Save mappings to server immediately
-            fetch('/save-mappings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    offers: state.manualOfferIds,
-                    sources: state.manualSourceIds,
-                }),
-            });
+            // Save learned mappings
+            if (Object.keys(state.manualOfferIds).length > 0) {
+                saveOfferMappings(state.manualOfferIds);
+                // Also add to reference data (without platform suffix)
+                for (const [name, id] of Object.entries(state.manualOfferIds)) {
+                    addOffer(id, stripPlatformSuffix(name));
+                }
+            }
+            if (Object.keys(state.manualSourceIds).length > 0) {
+                saveSourceMappings(state.manualSourceIds);
+                for (const [name, id] of Object.entries(state.manualSourceIds)) {
+                    addSource(id, name);
+                }
+            }
 
             showDownload();
             showStatus('upload-status', 'Все ID заполнены и сохранены', 'success');
@@ -288,52 +303,8 @@
                 `${state.statsRows.length} строк, дата: ${state.date}, курс: ${state.exchangeRate} руб./USD`;
         }
 
-        async function downloadReport() {
-            try {
-                const response = await fetch('/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        date: state.date,
-                        exchange_rate: state.exchangeRate,
-                        stats_rows: state.statsRows,
-                        offer_ids: state.offerIds,
-                        source_ids: state.sourceIds,
-                        manual_offer_ids: state.manualOfferIds,
-                        manual_source_ids: state.manualSourceIds,
-                    }),
-                });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    alert(err.error || 'Ошибка генерации отчета');
-                    return;
-                }
-
-                // Trigger download
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `report_${state.date}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-
-            } catch (err) {
-                alert('Ошибка сети: ' + err.message);
-            }
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function escapeAttr(text) {
-            return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        function downloadReport() {
+            generateReport(state.date, state.exchangeRate, state.statsRows, state.offerIds, state.sourceIds);
         }
     </script>
 </body>
