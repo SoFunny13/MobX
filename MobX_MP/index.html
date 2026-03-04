@@ -8,18 +8,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- Password Gate -->
-    <div id="auth-gate" class="auth-gate">
-        <div class="auth-box">
-            <h2>Media Plan Generator</h2>
-            <p>Enter password to continue</p>
-            <input type="password" id="auth-password" placeholder="Password" autocomplete="off">
-            <button id="auth-submit" class="btn btn-primary">Enter</button>
-            <p id="auth-error" class="auth-error" style="display:none">Wrong password</p>
-        </div>
-    </div>
-
-    <div class="container" id="main-app" style="display:none">
+    <div class="container" id="main-app">
         <header class="app-header">
             <h1>Media Plan Generator</h1>
             <p class="subtitle">Create and export professional media plans</p>
@@ -215,48 +204,6 @@
         </section>
     </div>
 
-    <script>
-    // Password gate (SHA-256 hash comparison)
-    const PASS_HASH = 'db02b9530ab98a22cd4f7a0a62243b0ba8e3f37d3d515e7c7a9ec23b9d18acf8';
-
-    async function sha256(str) {
-        const buf = new TextEncoder().encode(str);
-        const hash = await crypto.subtle.digest('SHA-256', buf);
-        return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-
-    function unlockApp() {
-        document.getElementById('auth-gate').style.display = 'none';
-        document.getElementById('main-app').style.display = '';
-        sessionStorage.setItem('mp_auth', '1');
-    }
-
-    // Auto-unlock if already authenticated in this session
-    if (sessionStorage.getItem('mp_auth') === '1') {
-        document.addEventListener('DOMContentLoaded', unlockApp);
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        const input = document.getElementById('auth-password');
-        const btn = document.getElementById('auth-submit');
-        const err = document.getElementById('auth-error');
-
-        async function tryLogin() {
-            const hash = await sha256(input.value);
-            if (hash === PASS_HASH) {
-                unlockApp();
-            } else {
-                err.style.display = '';
-                input.value = '';
-                input.focus();
-            }
-        }
-
-        btn.addEventListener('click', tryLogin);
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
-        if (sessionStorage.getItem('mp_auth') !== '1') input.focus();
-    });
-    </script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" integrity="sha384-OUW9euuUyxyHcAhTqbhI+Iyb8LMssXt/cpz0yXhs9UWG2/R/uaWdakx/4cfww7Vb" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
     <script src="logo-data.js"></script>
