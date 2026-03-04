@@ -17,6 +17,11 @@ const CURRENCY_RATES = {
     INR: 83.5
 };
 
+function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // Benchmark data is now in benchmarks.js:
 // CHANNEL_BENCHMARKS, VERTICAL_MULTIPLIERS, COUNTRY_GEO_MULTIPLIERS,
 // REGION_FALLBACK_MULTIPLIERS, COUNTRY_TO_REGION, PLATFORM_MULTIPLIERS,
@@ -163,8 +168,13 @@ function renderGeoTags() {
     selectedGeos.forEach(code => {
         const tag = document.createElement('span');
         tag.className = 'geo-tag';
-        tag.innerHTML = `${code} <button class="geo-tag-remove" title="Remove">&times;</button>`;
-        tag.querySelector('.geo-tag-remove').addEventListener('click', (e) => {
+        tag.appendChild(document.createTextNode(code + ' '));
+        const btn = document.createElement('button');
+        btn.className = 'geo-tag-remove';
+        btn.title = 'Remove';
+        btn.innerHTML = '&times;';
+        tag.appendChild(btn);
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
             removeGeoTag(code);
         });
@@ -490,8 +500,8 @@ function createSourceRow(sourceKey, label, platform, geo) {
     const mode = getMode();
 
     const baseCols = `
-        <td><input type="text" data-field="channel" value="${label}" class="input-channel" readonly style="font-weight:600;cursor:default"></td>
-        <td><input type="text" data-field="platform" value="${platform}" class="input-channel" readonly style="cursor:default"></td>
+        <td><input type="text" data-field="channel" value="${escapeAttr(label)}" class="input-channel" readonly style="font-weight:600;cursor:default"></td>
+        <td><input type="text" data-field="platform" value="${escapeAttr(platform)}" class="input-channel" readonly style="cursor:default"></td>
         <td><input type="text" data-field="geo" list="geo-options" placeholder="Select country" autocomplete="off"></td>
         <td><input type="text" data-field="period" value="1 month" style="width:80px"></td>`;
 
