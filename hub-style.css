@@ -1,0 +1,301 @@
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #1a1a2e;
+    --surface: rgba(255, 255, 255, 0.025);
+    --border: rgba(255, 255, 255, 0.06);
+    --border-hover: rgba(255, 255, 255, 0.14);
+    --text-primary: #ededf5;
+    --text-secondary: #8585a0;
+    --text-dim: #4e4e6a;
+    --blue: #4a6cf7;
+    --violet: #7c5bf5;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    background-image:
+        radial-gradient(ellipse 70% 50% at 15% 0%, rgba(74, 108, 247, 0.07) 0%, transparent 100%),
+        radial-gradient(ellipse 60% 50% at 85% 100%, rgba(124, 91, 245, 0.05) 0%, transparent 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Ambient glows ── */
+.glow {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+}
+.glow-1 {
+    width: 620px;
+    height: 620px;
+    background: radial-gradient(circle, rgba(74, 108, 247, 0.06), transparent 70%);
+    top: -280px;
+    left: -160px;
+    animation: drift 22s ease-in-out infinite alternate;
+}
+.glow-2 {
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(124, 91, 245, 0.045), transparent 70%);
+    bottom: -220px;
+    right: -160px;
+    animation: drift 26s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes drift {
+    from { transform: translate(0, 0); }
+    to   { transform: translate(30px, 18px); }
+}
+
+/* ── Layout ── */
+main {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 110px 24px 48px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Hero ── */
+.hero {
+    text-align: center;
+    margin-bottom: 72px;
+    animation: fadeUp 0.7s ease;
+}
+
+.hero-label {
+    display: inline-block;
+    text-transform: uppercase;
+    letter-spacing: 0.28em;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+}
+
+.hero h1 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: clamp(2.8rem, 6vw, 4rem);
+    letter-spacing: -0.035em;
+    line-height: 1;
+    background: linear-gradient(160deg, #ffffff 25%, #8080b0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-sub {
+    color: var(--text-secondary);
+    font-size: 15px;
+    margin-top: 16px;
+    letter-spacing: 0.01em;
+}
+
+/* ── Accent line under hero ── */
+.hero-line {
+    display: block;
+    width: 48px;
+    height: 2px;
+    margin: 28px auto 0;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--blue), var(--violet));
+    opacity: 0.5;
+}
+
+/* ── Card grid ── */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+/* ── Cards ── */
+.card {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 36px 32px 32px;
+    transition:
+        border-color 0.35s ease,
+        transform 0.35s ease,
+        box-shadow 0.35s ease,
+        background 0.35s ease;
+    position: relative;
+    overflow: hidden;
+    animation: cardReveal 0.65s ease backwards;
+    animation-delay: calc(var(--i, 0) * 0.12s + 0.25s);
+}
+
+.card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.015), transparent 50%);
+    pointer-events: none;
+}
+
+.card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-6px);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow:
+        0 28px 68px -20px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Card icon */
+.card-icon {
+    width: 58px;
+    height: 58px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    margin-bottom: 28px;
+}
+
+.card--blue .card-icon {
+    background: rgba(74, 108, 247, 0.08);
+    border: 1px solid rgba(74, 108, 247, 0.12);
+}
+
+.card--violet .card-icon {
+    background: rgba(124, 91, 245, 0.08);
+    border: 1px solid rgba(124, 91, 245, 0.12);
+}
+
+/* Card body */
+.card-body {
+    flex: 1;
+}
+
+.card-body h2 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 500;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    margin-bottom: 8px;
+}
+
+.card-body p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+/* Tags */
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tag {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 11px;
+    border-radius: 100px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+}
+
+/* Card arrow */
+.card-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    font-family: 'Outfit', sans-serif;
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--text-dim);
+    margin-top: 28px;
+    transition: color 0.3s ease, transform 0.3s ease;
+}
+
+.card:hover .card-arrow {
+    color: var(--text-secondary);
+    transform: translateX(5px);
+}
+
+/* ── Footer ── */
+footer {
+    text-align: center;
+    padding-top: 56px;
+    margin-top: auto;
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+}
+
+footer a {
+    color: var(--text-dim);
+    text-decoration: none;
+    transition: color 0.25s ease;
+}
+
+footer a:hover {
+    color: var(--text-secondary);
+}
+
+/* ── Animations ── */
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(-12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cardReveal {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Responsive ── */
+@media (max-width: 680px) {
+    main {
+        padding: 64px 16px 32px;
+    }
+
+    .hero {
+        margin-bottom: 48px;
+    }
+
+    .hero h1 {
+        font-size: 2.4rem;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .card {
+        padding: 28px 24px 24px;
+    }
+}
