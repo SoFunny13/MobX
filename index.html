@@ -22,7 +22,7 @@
         </header>
 
         <div class="grid">
-            <a href="MobX_MP/" class="card card--blue" style="--i: 0" onclick="sessionStorage.setItem('mobx_hub_access','1')">
+            <a href="MobX_MP/" class="card card--blue" style="--i: 0">
                 <div class="card-icon">📊</div>
                 <div class="card-body">
                     <h2>Media Plan Generator</h2>
@@ -36,7 +36,7 @@
                 <div class="card-arrow">&rarr;</div>
             </a>
 
-            <a href="FMS_Cost/" class="card card--violet" style="--i: 1" onclick="sessionStorage.setItem('mobx_hub_access','1')">
+            <a href="FMS_Cost/" class="card card--violet" style="--i: 1">
                 <div class="card-icon">📋</div>
                 <div class="card-body">
                     <h2>ФМС — Генератор отчётов</h2>
@@ -52,8 +52,16 @@
         </div>
 
         <footer>
-            <a href="https://github.com/SoFunny13/MobX">github.com/SoFunny13/MobX</a>
+            <a href="https://github.com/SoFunny13/MobX" rel="noopener noreferrer">github.com/SoFunny13/MobX</a>
         </footer>
     </main>
+
+    <script>
+        document.querySelectorAll('.card').forEach(function(card) {
+            card.addEventListener('click', function() {
+                sessionStorage.setItem('mobx_hub_access', '1');
+            });
+        });
+    </script>
 </body>
 </html>
