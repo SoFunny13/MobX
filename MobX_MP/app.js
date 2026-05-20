@@ -17,15 +17,38 @@ const CURRENCY_RATES = {
     INR: 83.5
 };
 
-function escapeAttr(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 // Benchmark data is now in benchmarks.js:
 // CHANNEL_BENCHMARKS, VERTICAL_MULTIPLIERS, COUNTRY_GEO_MULTIPLIERS,
 // REGION_FALLBACK_MULTIPLIERS, COUNTRY_TO_REGION, PLATFORM_MULTIPLIERS,
 // GEO_ALIASES, STORE_TO_VERTICAL, getGeoMultipliers
+
+// ── Brand configuration ───────────────────────────────────────────────────────
+// Logo constants come from logo-data.js (LOGO_MOBX_BASE64) and logo-gravils.js (LOGO_GRAVILS_BASE64)
+const BRANDS = {
+    mobx: {
+        name: 'MobX',
+        agencyName: 'MobX Agency',
+        logoBase64: LOGO_MOBX_BASE64,
+        excelHeaderHex: '4285F4',
+        excelHeaderLightHex: 'BDD6EE',
+        logoEmuWidth: 2371725,
+        logoEmuHeight: 742950        // PNG 1672×520 → 3.215:1
+    },
+    gravils: {
+        name: 'Gravils',
+        agencyName: 'Gravils Agency',
+        logoBase64: LOGO_GRAVILS_BASE64,
+        excelHeaderHex: '02B766',
+        excelHeaderLightHex: 'B8E5CE',
+        logoEmuWidth: 2371725,
+        logoEmuHeight: 1185862       // PNG 4267×2134 → 2:1
+    }
+};
+
+function getBrand() {
+    const key = document.getElementById('brand').value;
+    return BRANDS[key] || null;
+}
 
 // CORS proxy for Google Play (iTunes API works directly without proxy)
 const GP_PROXY = 'https://api.codetabs.com/v1/proxy/?quest=';
@@ -56,6 +79,12 @@ const geoTagsContainer = document.getElementById('geo-tags');
 const geoAddInput = document.getElementById('geo-add-input');
 const geoAddDatalist = document.getElementById('geo-add-options');
 const trafficTypeSelect = document.getElementById('traffic-type');
+const brandSelect = document.getElementById('brand');
+const registrationCheckbox = document.getElementById('enable-registration');
+
+function isRegistrationEnabled() {
+    return registrationCheckbox && registrationCheckbox.checked;
+}
 
 function getMode() {
     const v = cpaEventSelect.value;
@@ -88,6 +117,8 @@ document.addEventListener('DOMContentLoaded', () => {
     trafficTypeSelect.addEventListener('change', onTrafficTypeChange);
     currencySelect.addEventListener('change', onCurrencyChange);
     verticalSelect.addEventListener('change', reapplyAllBenchmarks);
+    brandSelect.addEventListener('change', onBrandChange);
+    registrationCheckbox.addEventListener('change', onRegistrationToggle);
     appLinkAndroid.addEventListener('blur', () => onAppLinkBlur(appLinkAndroid, appLinkAndroidStatus));
     appLinkIos.addEventListener('blur', () => onAppLinkBlur(appLinkIos, appLinkIosStatus));
     const commPctInput = document.getElementById('commission-pct');
@@ -97,6 +128,20 @@ document.addEventListener('DOMContentLoaded', () => {
     initGeoMultiSelect();
     initSourceCheckboxes();
 });
+
+function onBrandChange() {
+    const key = brandSelect.value;
+    document.body.classList.remove('brand-mobx', 'brand-gravils');
+    if (key) document.body.classList.add(`brand-${key}`);
+    // Sync Campaign default if the field is empty or holds a known agency-default string.
+    // Don't overwrite user-typed custom values.
+    const campaignInput = document.getElementById('campaign');
+    const currentVal = campaignInput.value.trim();
+    const isAgencyDefault = ['', 'MobX Agency', 'Gravils Agency'].includes(currentVal);
+    if (key && isAgencyDefault) {
+        campaignInput.value = BRANDS[key].agencyName;
+    }
+}
 
 // ── GEO Datalist ──────────────────────────────────────────────────────────────
 
@@ -168,13 +213,8 @@ function renderGeoTags() {
     selectedGeos.forEach(code => {
         const tag = document.createElement('span');
         tag.className = 'geo-tag';
-        tag.appendChild(document.createTextNode(code + ' '));
-        const btn = document.createElement('button');
-        btn.className = 'geo-tag-remove';
-        btn.title = 'Remove';
-        btn.innerHTML = '&times;';
-        tag.appendChild(btn);
-        btn.addEventListener('click', (e) => {
+        tag.innerHTML = `${code} <button class="geo-tag-remove" title="Remove">&times;</button>`;
+        tag.querySelector('.geo-tag-remove').addEventListener('click', (e) => {
             e.stopPropagation();
             removeGeoTag(code);
         });
@@ -241,6 +281,16 @@ function onCpaEventChange() {
     updateVatVisibility();
     const commGroup = document.getElementById('commission-pct-group');
     if (commGroup) commGroup.style.display = isCommissionMode() ? 'block' : 'none';
+}
+
+function onRegistrationToggle() {
+    tbody.innerHTML = '';
+    document.querySelectorAll('#source-select input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+    });
+    rowCounter = 0;
+    renderTableStructure();
+    recalcTotals();
 }
 
 function onTrafficTypeChange() {
@@ -323,7 +373,10 @@ function renderTableStructure() {
             <th class="col-ctr">CTR, %</th>
             <th class="col-clicks">Total Clicks</th>
             <th class="col-cpc">CPC</th>
-            <th class="col-cr-purchase">CR install to purchase, %</th>
+            ${isRegistrationEnabled() ? `<th class="col-cr-reg">CR install to registration, %</th>
+            <th class="col-registrations">Total Registrations</th>
+            <th class="col-cost-per-reg">Cost per Registration</th>
+            ` : ''}<th class="col-cr-purchase">CR install to purchase, %</th>
             <th class="col-purchases">Total Purchases</th>
             <th class="col-cpp">Cost per purchase</th>
             <th class="col-actions"></th>
@@ -338,7 +391,10 @@ function renderTableStructure() {
             <td>—</td>
             <td id="total-clicks">0</td>
             <td>—</td>
+            ${isRegistrationEnabled() ? `<td>—</td>
+            <td id="total-registrations">0</td>
             <td>—</td>
+            ` : ''}<td>—</td>
             <td id="total-purchases">0</td>
             <td>—</td>
             <td></td>
@@ -360,7 +416,10 @@ function renderTableStructure() {
             <th class="col-cr-install">CR install/click, %</th>
             <th class="col-installs">Total Installs</th>
             <th class="col-cpi">CPI</th>
-            <th class="col-actions"></th>
+            ${isRegistrationEnabled() ? `<th class="col-cr-reg">CR install to registration, %</th>
+            <th class="col-registrations">Total Registrations</th>
+            <th class="col-cost-per-reg">Cost per Registration</th>
+            ` : ''}<th class="col-actions"></th>
         </tr>`;
         tfoot.innerHTML = `<tr class="total-row" id="total-row">
             <td colspan="4" class="total-label">Total</td>
@@ -375,7 +434,10 @@ function renderTableStructure() {
             <td>—</td>
             <td id="total-installs">0</td>
             <td>—</td>
-            <td></td>
+            ${isRegistrationEnabled() ? `<td>—</td>
+            <td id="total-registrations">0</td>
+            <td>—</td>
+            ` : ''}<td></td>
         </tr>`;
     }
 }
@@ -434,7 +496,12 @@ function filterSourcesByTraffic() {
 /**
  * Sources that only support Android (even if iOS link is filled).
  */
-const ANDROID_ONLY_SOURCES = ['xiaomi', 'xiaomi_codev', 'appnext', 'xapads', 'google', 'huawei'];
+const ANDROID_ONLY_SOURCES = ['xiaomi', 'xiaomi_codev', 'appnext', 'xapads', 'google', 'huawei', 'moloco'];
+
+/**
+ * Sources that only support iOS (Apple Search Ads has no Android equivalent).
+ */
+const IOS_ONLY_SOURCES = ['asa'];
 
 /**
  * Sources that use a custom platform name instead of Android/iOS.
@@ -458,6 +525,8 @@ function getActivePlatforms(sourceKey) {
     const hasIos = appLinkIos.value.trim() !== '';
     // Custom platform sources (e.g. Huawei → AppGallery)
     if (CUSTOM_PLATFORM_SOURCES[sourceKey]) return [CUSTOM_PLATFORM_SOURCES[sourceKey]];
+    // iOS-only sources (Apple Search Ads) — always only iOS regardless of app links
+    if (IOS_ONLY_SOURCES.includes(sourceKey)) return ['iOS'];
     // Android-only sources always get only Android rows
     if (ANDROID_ONLY_SOURCES.includes(sourceKey)) return ['Android'];
     if (hasAndroid && hasIos) return ['Android', 'iOS'];
@@ -500,8 +569,8 @@ function createSourceRow(sourceKey, label, platform, geo) {
     const mode = getMode();
 
     const baseCols = `
-        <td><input type="text" data-field="channel" value="${escapeAttr(label)}" class="input-channel" readonly style="font-weight:600;cursor:default"></td>
-        <td><input type="text" data-field="platform" value="${escapeAttr(platform)}" class="input-channel" readonly style="cursor:default"></td>
+        <td><input type="text" data-field="channel" value="${label}" class="input-channel" readonly style="font-weight:600;cursor:default"></td>
+        <td><input type="text" data-field="platform" value="${platform}" class="input-channel" readonly style="cursor:default"></td>
         <td><input type="text" data-field="geo" list="geo-options" placeholder="Select country" autocomplete="off"></td>
         <td><input type="text" data-field="period" value="1 month" style="width:80px"></td>`;
 
@@ -529,7 +598,10 @@ function createSourceRow(sourceKey, label, platform, geo) {
         <td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="ctr" placeholder="e.g. 1.2" class="editable-calc"><span class="pct-sign">%</span></span></td>
         <td><input type="text" inputmode="decimal" data-field="clicks" class="calculated" readonly tabindex="-1"></td>
         <td><input type="text" inputmode="decimal" data-field="cpc" class="calculated" readonly tabindex="-1"></td>
-        <td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crPurchase" placeholder="e.g. 5"><span class="pct-sign">%</span></span></td>
+        ${isRegistrationEnabled() ? `<td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crInstallToRegistration" placeholder="e.g. 30"><span class="pct-sign">%</span></span></td>
+        <td><input type="text" inputmode="decimal" data-field="totalRegistrations" class="calculated" readonly tabindex="-1"></td>
+        <td><input type="text" inputmode="decimal" data-field="costPerRegistration" class="calculated" readonly tabindex="-1"></td>
+        ` : ''}<td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crPurchase" placeholder="e.g. 5"><span class="pct-sign">%</span></span></td>
         <td><input type="text" inputmode="decimal" data-field="purchases" class="calculated" readonly tabindex="-1"></td>
         <td><input type="text" inputmode="decimal" data-field="cpp" class="calculated" readonly tabindex="-1"></td>
         <td><button class="btn-delete" title="Remove row">&times;</button></td>`;
@@ -561,7 +633,10 @@ function createSourceRow(sourceKey, label, platform, geo) {
         <td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crInstall" placeholder="e.g. 5" class="editable-calc"><span class="pct-sign">%</span></span></td>
         <td><input type="text" inputmode="decimal" data-field="installs" class="calculated" readonly tabindex="-1"></td>
         <td><input type="text" inputmode="decimal" data-field="cpi" placeholder="CPI" class="editable-calc"></td>
-        <td><button class="btn-delete" title="Remove row">&times;</button></td>`;
+        ${isRegistrationEnabled() ? `<td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crInstallToRegistration" placeholder="e.g. 30"><span class="pct-sign">%</span></span></td>
+        <td><input type="text" inputmode="decimal" data-field="totalRegistrations" class="calculated" readonly tabindex="-1"></td>
+        <td><input type="text" inputmode="decimal" data-field="costPerRegistration" class="calculated" readonly tabindex="-1"></td>
+        ` : ''}<td><button class="btn-delete" title="Remove row">&times;</button></td>`;
     }
 
     // Wire events
@@ -570,7 +645,7 @@ function createSourceRow(sourceKey, label, platform, geo) {
         inp.addEventListener('input', () => recalcRow(tr));
     });
     // Format editable numeric fields with spaces
-    tr.querySelectorAll('input[data-field="budget"], input[data-field="cpa"], input[data-field="cpi"], input[data-field="purchases"], input[data-field="cpp"], input[data-field="crPurchase"], input[data-field="crInstall"], input[data-field="ctr"]').forEach(wireNumericFormat);
+    tr.querySelectorAll('input[data-field="budget"], input[data-field="cpa"], input[data-field="cpi"], input[data-field="purchases"], input[data-field="cpp"], input[data-field="crPurchase"], input[data-field="crInstall"], input[data-field="crInstallToRegistration"], input[data-field="ctr"]').forEach(wireNumericFormat);
 
     const geoInput = tr.querySelector('[data-field="geo"]');
     if (geo) geoInput.value = geo;
@@ -793,7 +868,10 @@ function addRow() {
         <td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="ctr" placeholder="e.g. 1.2" class="editable-calc"><span class="pct-sign">%</span></span></td>
         <td><input type="text" inputmode="decimal" data-field="clicks" class="calculated" readonly tabindex="-1"></td>
         <td><input type="text" inputmode="decimal" data-field="cpc" class="calculated" readonly tabindex="-1"></td>
-        <td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crPurchase" placeholder="e.g. 5"><span class="pct-sign">%</span></span></td>
+        ${isRegistrationEnabled() ? `<td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crInstallToRegistration" placeholder="e.g. 30"><span class="pct-sign">%</span></span></td>
+        <td><input type="text" inputmode="decimal" data-field="totalRegistrations" class="calculated" readonly tabindex="-1"></td>
+        <td><input type="text" inputmode="decimal" data-field="costPerRegistration" class="calculated" readonly tabindex="-1"></td>
+        ` : ''}<td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crPurchase" placeholder="e.g. 5"><span class="pct-sign">%</span></span></td>
         <td><input type="text" inputmode="decimal" data-field="purchases" class="calculated" readonly tabindex="-1"></td>
         <td><input type="text" inputmode="decimal" data-field="cpp" class="calculated" readonly tabindex="-1"></td>
         <td><button class="btn-delete" title="Remove row">&times;</button></td>`;
@@ -825,7 +903,10 @@ function addRow() {
         <td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crInstall" placeholder="e.g. 5" class="editable-calc"><span class="pct-sign">%</span></span></td>
         <td><input type="text" inputmode="decimal" data-field="installs" class="calculated" readonly tabindex="-1"></td>
         <td><input type="text" inputmode="decimal" data-field="cpi" placeholder="CPI" class="editable-calc"></td>
-        <td><button class="btn-delete" title="Remove row">&times;</button></td>`;
+        ${isRegistrationEnabled() ? `<td><span class="pct-wrap"><input type="text" inputmode="decimal" data-field="crInstallToRegistration" placeholder="e.g. 30"><span class="pct-sign">%</span></span></td>
+        <td><input type="text" inputmode="decimal" data-field="totalRegistrations" class="calculated" readonly tabindex="-1"></td>
+        <td><input type="text" inputmode="decimal" data-field="costPerRegistration" class="calculated" readonly tabindex="-1"></td>
+        ` : ''}<td><button class="btn-delete" title="Remove row">&times;</button></td>`;
     }
 
     // Wire events
@@ -837,7 +918,7 @@ function addRow() {
         inp.addEventListener('input', () => recalcRow(tr));
     });
     // Format editable numeric fields with spaces
-    tr.querySelectorAll('input[data-field="budget"], input[data-field="cpa"], input[data-field="cpi"], input[data-field="purchases"], input[data-field="cpp"], input[data-field="crPurchase"], input[data-field="crInstall"], input[data-field="ctr"]').forEach(wireNumericFormat);
+    tr.querySelectorAll('input[data-field="budget"], input[data-field="cpa"], input[data-field="cpi"], input[data-field="purchases"], input[data-field="cpp"], input[data-field="crPurchase"], input[data-field="crInstall"], input[data-field="crInstallToRegistration"], input[data-field="ctr"]').forEach(wireNumericFormat);
 
     const geoInput = tr.querySelector('[data-field="geo"]');
     geoInput.addEventListener('change', () => {
@@ -919,10 +1000,22 @@ function applyBenchmarks(tr) {
     const platMult = PLATFORM_MULTIPLIERS[platform] || PLATFORM_MULTIPLIERS.Android;
 
     // 5. Calculate final values (4D: base × vertical × geo × platform)
-    const finalCtr = roundBenchmark(base.ctr * vertMult.ctr * geoMult.ctr * platMult.ctr);
+    // Per-platform CTR override (e.g. Unity): value is the final CTR, multipliers don't apply
+    let finalCtr = (typeof base.ctr === 'object')
+        ? roundBenchmark(base.ctr[platform] ?? base.ctr.Android)
+        : roundBenchmark(base.ctr * vertMult.ctr * geoMult.ctr * platMult.ctr);
     const cpiMult = (vertical === 'finance') ? 1.47 : 2.35;
     const curRate = CURRENCY_RATES[currentCurrency] || 1; // convert from USD to current currency
-    const finalCpi = Math.round(base.cpi * vertMult.cpi * geoMult.cpi * cpiMult * platMult.cpi * curRate * 10) / 10;
+    let finalCpi = Math.round(base.cpi * vertMult.cpi * geoMult.cpi * cpiMult * platMult.cpi * curRate * 10) / 10;
+    let finalCr = roundBenchmark(base.crInstall * vertMult.crInstall * geoMult.crInstall * platMult.crInstall);
+
+    // ASA override: bypass standard 4D formula (search-intent economics, AppTweak 2025 data)
+    if (tr.dataset.sourceKey === 'asa') {
+        const v = ASA_VERTICAL[vertical] || ASA_VERTICAL.other;
+        finalCtr = ASA_GLOBAL_TTR;                                       // global Search Results TTR
+        finalCr  = v.cr;                                                 // per-vertical CR (no GEO/platform mult)
+        finalCpi = Math.round(v.cpi * geoMult.cpi * curRate * 10) / 10;  // US baseline × GEO mult (already AppTweak-calibrated)
+    }
 
     // 6. Apply
     if (ctrCanSet && !isNoViewsSource(tr)) {
@@ -934,7 +1027,6 @@ function applyBenchmarks(tr) {
         cpiInput.dataset.auto = '1';
     }
     if (crCanSet && crInstallInput) {
-        const finalCr = roundBenchmark(base.crInstall * vertMult.crInstall * geoMult.crInstall * platMult.crInstall);
         crInstallInput.value = fmtSpaces(finalCr);
         crInstallInput.dataset.auto = '1';
     }
@@ -1061,6 +1153,14 @@ function recalcRow(tr) {
         // cpp = effectiveBudget / purchases
         const cppI = (purchasesI > 0) ? effectiveBudget / purchasesI : 0;
         setCalc(tr, 'cpp', cppI);
+
+        if (isRegistrationEnabled()) {
+            const crRegPct = numField(tr, 'crInstallToRegistration');
+            const registrations = installs * (crRegPct / 100);
+            setCalc(tr, 'totalRegistrations', Math.round(registrations));
+            const costPerReg = (registrations > 0) ? effectiveBudget / registrations : 0;
+            setCalc(tr, 'costPerRegistration', costPerReg);
+        }
     } else {
         // Purchases mode
         const crInstallPct = numField(tr, 'crInstall');
@@ -1088,6 +1188,14 @@ function recalcRow(tr) {
         const cpa = numField(tr, 'cpa');
         const events = (cpa > 0) ? budget / cpa : 0;
         setCalc(tr, 'events', Math.round(events));
+
+        if (isRegistrationEnabled()) {
+            const crRegPct = numField(tr, 'crInstallToRegistration');
+            const registrations = installs * (crRegPct / 100);
+            setCalc(tr, 'totalRegistrations', Math.round(registrations));
+            const costPerReg = (registrations > 0) ? budget / registrations : 0;
+            setCalc(tr, 'costPerRegistration', costPerReg);
+        }
     }
 
     recalcTotals();
@@ -1102,6 +1210,12 @@ function getInternalCrInstall(tr) {
     const geoRaw = getField(tr, 'geo').trim();
     const platform = getField(tr, 'platform') || 'Android';
     const vertical = verticalSelect.value;
+
+    // ASA override: per-vertical CR, no multipliers (search-intent economics)
+    if (tr.dataset.sourceKey === 'asa') {
+        const v = ASA_VERTICAL[vertical] || ASA_VERTICAL.other;
+        return v.cr / 100; // convert percent to ratio
+    }
 
     let base = CHANNEL_BENCHMARKS._default;
     for (const [key, val] of Object.entries(CHANNEL_BENCHMARKS)) {
@@ -1156,6 +1270,15 @@ function recalcTotals() {
         });
         const eventsEl = document.getElementById('total-events');
         if (eventsEl) eventsEl.textContent = fmtNum(Math.round(totalEvents));
+    }
+
+    if (isRegistrationEnabled() && (mode === 'installs' || mode === 'purchases')) {
+        let totalRegistrations = 0;
+        tbody.querySelectorAll('tr').forEach(tr => {
+            totalRegistrations += numField(tr, 'totalRegistrations');
+        });
+        const regEl = document.getElementById('total-registrations');
+        if (regEl) regEl.textContent = fmtNum(Math.round(totalRegistrations));
     }
 
     // Cost summary
@@ -1230,7 +1353,7 @@ function updateVat(totalBudget, hasRu) {
         if (commissionRowLine) commissionRowLine.style.display = 'none';
         if (vatRowLine) vatRowLine.style.display = hasRu ? 'flex' : 'none';
         if (netLabel) netLabel.textContent = 'Max Placement Cost Net';
-        const vat = hasRu ? totalBudget * 0.2 : 0;
+        const vat = hasRu ? totalBudget * 0.22 : 0;
         const gross = totalBudget + vat;
         document.getElementById('vat-net').textContent = sym + fmtNum(totalBudget);
         document.getElementById('vat-amount').textContent = sym + fmtNum(vat);
@@ -1293,8 +1416,10 @@ function fmtNum(n) {
 
 function resetAll() {
     if (!confirm('Reset all data?')) return;
+    brandSelect.value = '';
+    document.body.classList.remove('brand-mobx', 'brand-gravils');
     document.getElementById('client').value = '';
-    document.getElementById('campaign').value = 'MobX Agency';
+    document.getElementById('campaign').value = '';
     document.getElementById('period').value = '1 month';
     cpaEventSelect.value = '';
     cpaEventCustom.value = '';
@@ -1326,6 +1451,12 @@ function resetAll() {
 // ── Excel Export (using xlsx-js-style for cell styling) ─────────────────────────
 
 function exportToExcel() {
+    const brand = getBrand();
+    if (!brand) {
+        alert('Please select a brand before exporting');
+        brandSelect.focus();
+        return;
+    }
     const client = document.getElementById('client').value || '';
     const campaign = document.getElementById('campaign').value || '';
     const docTitle = 'Internet placement proposal';
@@ -1372,10 +1503,16 @@ function exportToExcel() {
             base.cpp = numField(tr, 'cpp');
             base.crInstallBenchmark = getInternalCrInstall(tr); // ratio for formula
             base.commFactor = 1;
+            if (isRegistrationEnabled()) {
+                base.crInstallToRegistration = numField(tr, 'crInstallToRegistration') / 100;
+            }
         } else {
             base.events = numField(tr, 'events');
             base.cpa = numField(tr, 'cpa');
             base.crInstall = numField(tr, 'crInstall') / 100;
+            if (isRegistrationEnabled()) {
+                base.crInstallToRegistration = numField(tr, 'crInstallToRegistration') / 100;
+            }
         }
         rows.push(base);
     });
@@ -1419,7 +1556,7 @@ function exportToExcel() {
 
     const sHeader = {
         font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '4285F4' } },
+        fill: { fgColor: { rgb: brand.excelHeaderHex } },
         alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
         border: border
     };
@@ -1468,14 +1605,14 @@ function exportToExcel() {
 
     const sTotal = {
         font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '4285F4' } },
+        fill: { fgColor: { rgb: brand.excelHeaderHex } },
         alignment: { horizontal: 'center' },
         border: border
     };
 
     const sTotalNum = {
         font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '4285F4' } },
+        fill: { fgColor: { rgb: brand.excelHeaderHex } },
         alignment: { horizontal: 'center' },
         border: border,
         numFmt: '#,##0'
@@ -1483,7 +1620,7 @@ function exportToExcel() {
 
     const sTotalCur = {
         font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
-        fill: { fgColor: { rgb: '4285F4' } },
+        fill: { fgColor: { rgb: brand.excelHeaderHex } },
         alignment: { horizontal: 'center' },
         border: border,
         numFmt: curFmt
@@ -1500,11 +1637,11 @@ function exportToExcel() {
     };
     const sBlue = {
         font: { bold: true, sz: 11, color: { rgb: '000000' } },
-        fill: { fgColor: { rgb: 'BDD6EE' } }
+        fill: { fgColor: { rgb: brand.excelHeaderLightHex } }
     };
     const sBlueCur = {
         font: { bold: true, sz: 11, color: { rgb: '000000' } },
-        fill: { fgColor: { rgb: 'BDD6EE' } },
+        fill: { fgColor: { rgb: brand.excelHeaderLightHex } },
         numFmt: curFmt
     };
 
@@ -1569,24 +1706,32 @@ function exportToExcel() {
             '', 'Total Cost'
         ];
     } else if (mode === 'installs') {
-        COLS = 19;
+        const regCols = isRegistrationEnabled()
+            ? ['CR install to registration', 'Total Registrations', 'Cost per Registration']
+            : [];
+        COLS = 19 + regCols.length;
         sepCols = new Set([4, 10]);
         headerTexts = [
             'Channel', 'Platform', 'Targeting', 'Period', '',
             'Total installs', 'CPI', '', '',
             'Total cost', '',
             'Views', 'CPM', 'CTR', 'Total clicks', 'CPC',
+            ...regCols,
             'CR install to purchase', 'Total purchases', 'Cost per purchase'
         ];
     } else {
-        COLS = 19;
+        const regCols = isRegistrationEnabled()
+            ? ['CR install to registration', 'Total Registrations', 'Cost per Registration']
+            : [];
+        COLS = 19 + regCols.length;
         sepCols = new Set([4, 10]);
         headerTexts = [
             'Channel', 'Platform', 'Targeting', 'Period', '',
             'Total Purchases', 'Cost per Purchase', '', '',
             'Total cost', '',
             'Views', 'CPM', 'CTR', 'Total clicks', 'CPC',
-            'CR install per click', 'Total installs', 'CPI'
+            'CR install per click', 'Total installs', 'CPI',
+            ...regCols
         ];
     }
     for (let c = 0; c < COLS; c++) {
@@ -1636,8 +1781,9 @@ function exportToExcel() {
             put(row, 16, empty(sSep));                                          // Q: sep
             put(row, 17, nc(r.budget, sCurrency));                              // R: Total Cost (input)
         } else if (mode === 'installs') {
-            // Input: G=CPI, J=Budget, N=CTR, Q=CR purchase
-            // Formulas: F=installs, L=views, M=cpm, O=clicks, P=cpc, R=purchases, S=cpp
+            // Input: G=CPI, J=Budget, N=CTR
+            // No-reg: Q=CR purchase, R=purchases, S=cpp
+            // With reg: Q=CR reg, R=registrations, S=cost-per-reg, T=CR purchase, U=purchases, V=cpp
             put(row, 5,  fc(`J${R}/G${R}`, sNumber));             // F: installs = budget/cpi
             put(row, 6,  nc(r.cpi, sCurrencyDec));                // G: CPI (input)
             put(row, 7,  sc('/', sData));
@@ -1657,9 +1803,18 @@ function exportToExcel() {
                 put(row, 12, fc(`(J${R}/L${R})*1000`, sCurrencyDec));          // M: cpm = (budget/views)*1000
                 put(row, 13, nc(r.ctr, sPercent));                             // N: CTR (input)
             }
-            put(row, 16, nc(r.crPurchase, sPercent));             // Q: CR purchase (input)
-            put(row, 17, fc(`F${R}*Q${R}`, sNumber));             // R: purchases = installs*crPurchase
-            put(row, 18, fc(`J${R}/R${R}`, sCurrencyDec));        // S: cpp = budget/purchases
+            if (isRegistrationEnabled()) {
+                put(row, 16, nc(r.crInstallToRegistration, sPercent));     // Q: CR install to reg (input)
+                put(row, 17, fc(`F${R}*Q${R}`, sNumber));                  // R: registrations = installs*CR
+                put(row, 18, fc(`J${R}/R${R}`, sCurrencyDec));             // S: cost per reg = budget/regs
+                put(row, 19, nc(r.crPurchase, sPercent));                  // T: CR purchase (input)
+                put(row, 20, fc(`F${R}*T${R}`, sNumber));                  // U: purchases = installs*crPurchase
+                put(row, 21, fc(`J${R}/U${R}`, sCurrencyDec));             // V: cpp = budget/purchases
+            } else {
+                put(row, 16, nc(r.crPurchase, sPercent));         // Q: CR purchase (input)
+                put(row, 17, fc(`F${R}*Q${R}`, sNumber));         // R: purchases = installs*crPurchase
+                put(row, 18, fc(`J${R}/R${R}`, sCurrencyDec));    // S: cpp = budget/purchases
+            }
         } else {
             // Input: G=CPA, J=Budget, N=CTR, Q=CR install, S=CPI
             // Formulas: F=events, L=views, M=cpm, O=clicks, P=cpc, R=installs
@@ -1684,6 +1839,11 @@ function exportToExcel() {
             put(row, 16, nc(r.crInstall, sPercent));              // Q: CR install (input)
             put(row, 17, fc(`J${R}/S${R}`, sNumber));             // R: installs = budget/cpi
             put(row, 18, nc(r.cpi, sCurrencyDec));                // S: CPI (input)
+            if (isRegistrationEnabled()) {
+                put(row, 19, nc(r.crInstallToRegistration, sPercent));     // T: CR install to reg (input)
+                put(row, 20, fc(`R${R}*T${R}`, sNumber));                  // U: registrations = installs*CR
+                put(row, 21, fc(`J${R}/U${R}`, sCurrencyDec));             // V: cost per reg = budget/regs
+            }
         }
     });
 
@@ -1712,7 +1872,15 @@ function exportToExcel() {
         put(totR, 9,  fc(`SUM(J${firstR}:J${lastDataR})`, sTotalCur));  // Total budget
         put(totR, 11, fc(`SUM(L${firstR}:L${lastDataR})`, sTotalNum));  // Total views
         put(totR, 14, fc(`SUM(O${firstR}:O${lastDataR})`, sTotalNum));  // Total clicks
-        put(totR, 17, fc(`SUM(R${firstR}:R${lastDataR})`, sTotalNum));  // Total col R
+        if (mode === 'installs' && isRegistrationEnabled()) {
+            put(totR, 17, fc(`SUM(R${firstR}:R${lastDataR})`, sTotalNum));  // Total registrations (col R)
+            put(totR, 20, fc(`SUM(U${firstR}:U${lastDataR})`, sTotalNum));  // Total purchases (col U)
+        } else if (mode === 'purchases' && isRegistrationEnabled()) {
+            put(totR, 17, fc(`SUM(R${firstR}:R${lastDataR})`, sTotalNum));  // Total installs (col R)
+            put(totR, 20, fc(`SUM(U${firstR}:U${lastDataR})`, sTotalNum));  // Total registrations (col U)
+        } else {
+            put(totR, 17, fc(`SUM(R${firstR}:R${lastDataR})`, sTotalNum));  // Total col R (purchases or installs)
+        }
     }
 
     // Cost summary block (with formula references)
@@ -1744,8 +1912,8 @@ function exportToExcel() {
         if (hasRu) {
             vr++;
             put(vr, 0, sc('VAT', sGray));
-            put(vr, 1, sc('20%', sGray));
-            put(vr, 2, fc(`C${netRow}*0.2`, sGrayCur)); // VAT = net * 20%
+            put(vr, 1, sc('22%', sGray));
+            put(vr, 2, fc(`C${netRow}*0.22`, sGrayCur)); // VAT = net * 22%
             lastRow = vr;
         }
 
@@ -1753,7 +1921,7 @@ function exportToExcel() {
         put(vr, 0, sc('Total cost Gross', sBlue));
         put(vr, 1, empty(sBlue));
         if (hasRu) {
-            put(vr, 2, fc(`C${netRow}*1.2`, sBlueCur)); // gross = net * 1.2
+            put(vr, 2, fc(`C${netRow}*1.22`, sBlueCur)); // gross = net * 1.22
         } else {
             put(vr, 2, fc(`C${netRow}`, sBlueCur)); // gross = net (no VAT)
         }
@@ -1810,21 +1978,21 @@ function exportToExcel() {
         : (cpaEvent ? `One ${cpaEvent.charAt(0).toUpperCase() + cpaEvent.slice(1)}` : 'Media Plan');
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-    const fileName = `MediaPlan_${client || 'Draft'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const fileName = `${client || 'Draft'}_${brand.name}.xlsx`;
 
     // Generate xlsx as array buffer, then inject logo via JSZip
     const xlsxData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
-    injectLogoAndDownload(xlsxData, fileName, sheetName);
+    injectLogoAndDownload(xlsxData, fileName, sheetName, brand.logoBase64, brand.logoEmuWidth, brand.logoEmuHeight);
 }
 
 // ── Logo injection into xlsx zip ────────────────────────────────────────────────
 
-async function injectLogoAndDownload(xlsxArrayBuffer, fileName, sheetName) {
+async function injectLogoAndDownload(xlsxArrayBuffer, fileName, sheetName, logoBase64, logoEmuWidth, logoEmuHeight) {
     const zip = await JSZip.loadAsync(xlsxArrayBuffer);
 
     // 1. Add the image file
-    const logoBytes = base64ToUint8Array(LOGO_BASE64);
+    const logoBytes = base64ToUint8Array(logoBase64);
     zip.file('xl/media/image1.png', logoBytes);
 
     // 2. Add drawing1.xml (defines where the image sits)
@@ -1839,7 +2007,7 @@ async function injectLogoAndDownload(xlsxArrayBuffer, fileName, sheetName) {
       <xdr:row>0</xdr:row>
       <xdr:rowOff>0</xdr:rowOff>
     </xdr:from>
-    <xdr:ext cx="2371725" cy="742950"/>
+    <xdr:ext cx="${logoEmuWidth}" cy="${logoEmuHeight}"/>
     <xdr:pic>
       <xdr:nvPicPr>
         <xdr:cNvPr id="2" name="Logo"/>

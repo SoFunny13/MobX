@@ -1,3 +1,79 @@
+/* ── Brand Theme Variables ─────────────────────────────── */
+
+:root {
+    --brand-color: #2e75b5;       /* default (MobX baseline) until a brand is selected */
+    --brand-color-light: #BDD6EE;
+}
+
+body.brand-mobx {
+    --brand-color: #2e75b5;
+    --brand-color-light: #BDD6EE;
+}
+
+body.brand-gravils {
+    --brand-color: #02B766;
+    --brand-color-light: #B8E5CE;
+}
+
+/* ── Auth Gate ─────────────────────────────────────────── */
+
+.auth-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f0f2f5;
+}
+
+.auth-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 40px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+    text-align: center;
+    max-width: 360px;
+    width: 100%;
+}
+
+.auth-box h2 {
+    font-size: 1.4rem;
+    color: #1a1a2e;
+    margin-bottom: 8px;
+}
+
+.auth-box p {
+    color: #666;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+}
+
+.auth-box input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.auth-box input:focus {
+    border-color: #2563eb;
+}
+
+.auth-box .btn {
+    width: 100%;
+}
+
+.auth-error {
+    color: #dc2626;
+    font-size: 0.85rem;
+    margin-top: 8px;
+}
+
 /* ── Base ──────────────────────────────────────────────── */
 
 * {
@@ -27,7 +103,7 @@ body {
 
 .app-header h1 {
     font-size: 28px;
-    color: #2e75b5;
+    color: var(--brand-color);
     font-weight: 700;
 }
 
@@ -49,7 +125,7 @@ body {
 .section-title {
     font-size: 16px;
     font-weight: 600;
-    color: #2e75b5;
+    color: var(--brand-color);
     margin-bottom: 16px;
     padding-bottom: 8px;
     border-bottom: 2px solid #e8eef5;
@@ -102,7 +178,7 @@ body {
 .form-group input:focus,
 .form-group select:focus {
     outline: none;
-    border-color: #2e75b5;
+    border-color: var(--brand-color);
     box-shadow: 0 0 0 3px rgba(46, 117, 181, 0.1);
 }
 
@@ -125,7 +201,7 @@ body {
 .source-group-title {
     font-size: 13px;
     font-weight: 600;
-    color: #2e75b5;
+    color: var(--brand-color);
     margin-bottom: 10px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -155,7 +231,7 @@ body {
 }
 
 .source-label input[type="checkbox"] {
-    accent-color: #2e75b5;
+    accent-color: var(--brand-color);
     width: 15px;
     height: 15px;
     cursor: pointer;
@@ -164,7 +240,7 @@ body {
 .source-label input[type="checkbox"]:checked + span,
 .source-label:has(input:checked) {
     font-weight: 600;
-    color: #2e75b5;
+    color: var(--brand-color);
 }
 
 .source-actions {
@@ -176,7 +252,7 @@ body {
     padding: 4px 12px;
     font-size: 12px;
     border-radius: 4px;
-    background: #2e75b5;
+    background: var(--brand-color);
     color: #fff;
     border: none;
     cursor: pointer;
@@ -218,7 +294,7 @@ body {
 }
 
 .geo-select-wrap:focus-within {
-    border-color: #2e75b5;
+    border-color: var(--brand-color);
 }
 
 .geo-tags {
@@ -315,7 +391,7 @@ body {
 }
 
 .btn-primary {
-    background: #2e75b5;
+    background: var(--brand-color);
     color: #fff;
 }
 
@@ -375,7 +451,7 @@ body {
 }
 
 #mediaplan-table thead .header-row th {
-    background: #2e75b5;
+    background: var(--brand-color);
     color: #fff;
     font-weight: 600;
     padding: 10px 8px;
@@ -420,13 +496,13 @@ body {
 #mediaplan-table tbody input:focus,
 #mediaplan-table tbody select:focus {
     outline: none;
-    border-color: #2e75b5;
+    border-color: var(--brand-color);
     background: #fff;
     box-shadow: 0 0 0 2px rgba(46, 117, 181, 0.15);
 }
 
 #mediaplan-table tbody input.calculated {
-    color: #2e75b5;
+    color: #1a1a2e;
     font-weight: 500;
     background: #f0f6fc;
     cursor: default;
@@ -481,7 +557,7 @@ body {
 
 /* Total row */
 .total-row {
-    background: #2e75b5;
+    background: var(--brand-color);
     color: #fff;
     font-weight: 700;
 }

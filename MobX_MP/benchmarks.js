@@ -18,7 +18,8 @@ const CHANNEL_BENCHMARKS = {
     meta:       { ctr: 1.5,  crInstall: 3.0,  cpi: 2.50 },
     google:     { ctr: 2.0,  crInstall: 2.5,  cpi: 2.80 },
     tiktok:     { ctr: 0.8,  crInstall: 1.5,  cpi: 3.00 },
-    unity:      { ctr: 1.8,  crInstall: 2.0,  cpi: 1.80 },
+    // Unity: video + playable ads dominate, CTR set per-platform as final value (no vertical/GEO/platform multipliers applied to CTR)
+    unity:      { ctr: { Android: 52, iOS: 57 },  crInstall: 2.0,  cpi: 1.80 },
     applovin:   { ctr: 1.6,  crInstall: 1.8,  cpi: 2.20 },
     ironsource: { ctr: 1.5,  crInstall: 1.7,  cpi: 2.00 },
     mintegral:  { ctr: 1.2,  crInstall: 1.5,  cpi: 1.80 },
@@ -29,7 +30,11 @@ const CHANNEL_BENCHMARKS = {
     snapchat:   { ctr: 0.7,  crInstall: 1.3,  cpi: 3.50 },
     twitter:    { ctr: 0.5,  crInstall: 1.0,  cpi: 4.50 },
     x:          { ctr: 0.5,  crInstall: 1.0,  cpi: 4.50 },
-    moloco:     { ctr: 1.3,  crInstall: 1.6,  cpi: 2.00 },
+    // Moloco: Android-only (we don't run iOS), CTR set as final value (no multipliers)
+    moloco:     { ctr: { Android: 55 },  crInstall: 1.6,  cpi: 2.00 },
+    bigo:       { ctr: 0.45, crInstall: 1.2,  cpi: 1.80 },
+    // Apple Search Ads: iOS-only, values overridden via ASA_VERTICAL in app.js (search-intent economics)
+    asa:        { ctr: 7.4,  crInstall: 56,   cpi: 1.80 },
     liftoff:    { ctr: 1.2,  crInstall: 1.5,  cpi: 2.50 },
     digital_turbine: { ctr: 1.0, crInstall: 0.6, cpi: 0.90 },
     // Default fallback
@@ -125,6 +130,28 @@ const REGION_FALLBACK_MULTIPLIERS = {
 const PLATFORM_MULTIPLIERS = {
     Android: { ctr: 1.00, crInstall: 1.00, cpi: 1.00 },  // baseline
     iOS:     { ctr: 1.25, crInstall: 0.85, cpi: 2.50 }   // iOS: +25% CTR, −15% CR, 2.5× CPI
+};
+
+// ── Apple Search Ads (ASA) per-vertical benchmarks ────────────────────────────
+// AppTweak Apple Ads Benchmarks 2025 (US Search Results, $1B ad spend dataset).
+// CPI is USD US baseline; multiplied by COUNTRY_GEO_MULTIPLIERS.cpi for other GEOs
+// (that table is already AppTweak-calibrated). CR is platform-stable, used as-is.
+// ASA economics differ structurally from display (search intent), so applyBenchmarks
+// bypasses VERTICAL_MULTIPLIERS / PLATFORM_MULTIPLIERS for ASA rows.
+const ASA_GLOBAL_TTR = 7.4;  // % — global Search Results median (tap-through rate)
+const ASA_VERTICAL = {
+    gaming:        { cpi: 12.28, cr: 55 },   // AppTweak: Games
+    finance:       { cpi: 8.23,  cr: 46 },   // AppTweak: Finance
+    ecommerce:     { cpi: 6.20,  cr: 41 },   // AppTweak: Shopping
+    social:        { cpi: 3.90,  cr: 59 },   // AppTweak: Social Networking
+    health:        { cpi: 3.83,  cr: 46 },   // AppTweak: Health & Fitness
+    entertainment: { cpi: 3.13,  cr: 64 },   // AppTweak: Photo & Video (entertainment cluster)
+    education:     { cpi: 3.24,  cr: 55 },   // AppTweak: Education
+    utilities:     { cpi: 2.90,  cr: 58 },   // AppTweak: Utilities
+    pharma:        { cpi: 5.00,  cr: 46 },   // estimate (no direct AppTweak vertical; ~Medical)
+    travel:        { cpi: 3.50,  cr: 50 },   // estimate
+    delivery:      { cpi: 3.50,  cr: 50 },   // estimate
+    other:         { cpi: 4.00,  cr: 56 }    // global Search Results median fallback
 };
 
 // ── 5. Country → Region mapping (fallback for countries not in COUNTRY_GEO_MULTIPLIERS)
