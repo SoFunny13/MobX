@@ -50,8 +50,49 @@ function getBrand() {
     return BRANDS[key] || null;
 }
 
-// CORS proxy for Google Play (iTunes API works directly without proxy)
-const GP_PROXY = 'https://api.codetabs.com/v1/proxy/?quest=';
+// Raw-passthrough CORS proxies — return the upstream body verbatim, so they work for
+// both HTML scraping and the iTunes JSON fallback. Tried in order until one succeeds.
+// allorigins /raw returns the body directly; /get wraps it in JSON { contents }.
+const CORS_PROXIES = [
+    { build: t => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(t),
+      read:  async r => await r.text() },
+    { build: t => 'https://api.allorigins.win/get?url=' + encodeURIComponent(t),
+      read:  async r => { const j = await r.json(); return j && j.contents ? j.contents : ''; } },
+    { build: t => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(t),
+      read:  async r => await r.text() },
+];
+
+// Google Play page fetch. The jina.ai reader is primary: fast, ~14KB cleaned text
+// (vs ~1.2MB raw HTML), reliably up, and CORS-enabled. It returns Markdown rather than
+// HTML, so extraction below handles both shapes. The raw-HTML proxies are the fallback.
+const GP_PROXIES = [
+    { build: t => 'https://r.jina.ai/' + encodeURIComponent(t),
+      read:  async r => await r.text() },
+    ...CORS_PROXIES,
+];
+
+/**
+ * Fetch `targetUrl` through a CORS proxy list, trying each until one returns a body of
+ * at least `minLength` chars. Each attempt is bounded by an AbortController timeout so a
+ * dead/slow proxy fails fast instead of hanging the UI. Returns the body text, or null.
+ */
+async function fetchViaProxies(targetUrl, { proxies = CORS_PROXIES, timeoutMs = 12000, minLength = 200 } = {}) {
+    for (const p of proxies) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+            const resp = await fetch(p.build(targetUrl), { signal: ctrl.signal });
+            if (!resp.ok) continue;
+            const body = await p.read(resp);
+            if (body && body.length >= minLength) return body;
+        } catch (e) {
+            // network error, abort/timeout, or JSON parse failure → next proxy
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    return null;
+}
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
@@ -790,14 +831,15 @@ async function fetchAppStoreCategory(appId, country) {
         } catch (e) { continue; }
     }
 
-    // Fallback: try via CORS proxy (for GitHub Pages etc.)
+    // Fallback: try via CORS proxies (for GitHub Pages etc. where direct may be blocked)
     for (const cc of attempts) {
         let baseUrl = `https://itunes.apple.com/lookup?id=${appId}`;
         if (cc) baseUrl += `&country=${cc}`;
         try {
-            const resp = await fetch(GP_PROXY + encodeURIComponent(baseUrl));
-            if (!resp.ok) continue;
-            const data = await resp.json();
+            // minLength 2 — an empty iTunes lookup legitimately returns {"resultCount":0,"results":[]}
+            const body = await fetchViaProxies(baseUrl, { minLength: 2, timeoutMs: 8000 });
+            if (!body) continue;
+            const data = JSON.parse(body);
             if (data.results && data.results.length > 0) {
                 const app = data.results[0];
                 return { vertical: mapStoreCategory(app.primaryGenreName), appName: app.trackName || '' };
@@ -809,27 +851,69 @@ async function fetchAppStoreCategory(appId, country) {
 }
 
 async function fetchGooglePlayCategory(packageName) {
-    // Google Play needs a CORS proxy — use codetabs
-    const pageUrl = `https://play.google.com/store/apps/details%3Fid%3D${packageName}%26hl%3Den`;
-    const resp = await fetch(GP_PROXY + pageUrl);
-    if (!resp.ok) throw new Error('Google Play fetch error');
-    const html = await resp.text();
+    // jina.ai reader (primary) + raw-HTML proxies (fallback). 16s budget — the big raw-HTML
+    // proxies are slow; jina is first and fast, so the common case returns in a few seconds.
+    const pageUrl = `https://play.google.com/store/apps/details?id=${packageName}&hl=en&gl=us`;
+    const body = await fetchViaProxies(pageUrl, { proxies: GP_PROXIES, timeoutMs: 16000 });
+    if (!body) throw new Error('Google Play fetch failed (all proxies)');
 
-    // Extract app name from <title> or JSON-LD
-    const nameMatch = html.match(/"name"\s*:\s*"([^"]+)"/i)
-                   || html.match(/<title>([^<]+?)(?:\s*-\s*Apps on Google Play)?<\/title>/i);
-    const appName = nameMatch ? nameMatch[1].trim() : '';
+    const vertical = extractGooglePlayVertical(body);
+    const appName = extractGooglePlayName(body);
+    // vertical 'other' = page fetched but category not recognised (e.g. consent/region
+    // interstitial) → caller shows "category not detected", not "fetch failed".
+    return { vertical, appName };
+}
 
-    // Extract category from JSON-LD structured data or itemprop tags
-    const categoryMatch = html.match(/"applicationCategory"\s*:\s*"([^"]+)"/i)
-                       || html.match(/itemprop="genre"[^>]*content="([^"]+)"/i)
-                       || html.match(/"genre"\s*:\s*"([^"]+)"/i)
-                       || html.match(/itemprop="genre"[^>]*>([^<]+)</i);
-
-    if (categoryMatch) {
-        return { vertical: mapStoreCategory(categoryMatch[1]), appName };
+/**
+ * Detect the vertical from either raw Play Store HTML (JSON-LD / itemprop genre) or the
+ * jina.ai reader's Markdown (which preserves the /store/apps/category/<SLUG> link).
+ * mapStoreCategory already knows both the genre names and the Play category slugs.
+ */
+function extractGooglePlayVertical(body) {
+    // 1) Authoritative genre from JSON-LD / itemprop (present in raw HTML).
+    const m = body.match(/"applicationCategory"\s*:\s*"([^"]+)"/i)
+           || body.match(/itemprop="genre"[^>]*content="([^"]+)"/i)
+           || body.match(/"genre"\s*:\s*"([^"]+)"/i)
+           || body.match(/itemprop="genre"[^>]*>([^<]+)</i);
+    if (m) {
+        const v = mapStoreCategory(m[1]);
+        if (v !== 'other') return v;
     }
-    return { vertical: 'other', appName };
+    // 2) Category URL slug (works for Markdown and HTML). The first slug that maps to a
+    //    known vertical wins, which skips the top-nav "FAMILY" link (maps to 'other').
+    for (const x of body.matchAll(/\/store\/apps\/category\/([A-Z_]+)/g)) {
+        const v = mapStoreCategory(x[1]);
+        if (v !== 'other') return v;
+    }
+    return 'other';
+}
+
+/**
+ * Extract the app name from the proxied body. Handles the jina.ai reader's leading
+ * "Title: <name> - Apps on Google Play" line, then raw-HTML signals: the JSON-LD "name"
+ * adjacent to applicationCategory (the SoftwareApplication node), <title>, then any "name".
+ */
+function extractGooglePlayName(body) {
+    const reader = body.match(/^Title:[ \t]*(.*)/);
+    if (reader) {
+        const name = reader[1].replace(/\s*[-–|]\s*Apps on Google Play\s*$/i, '').trim();
+        if (name) return decodeEntities(name);
+    }
+    const i = body.search(/"applicationCategory"/i);
+    if (i !== -1) {
+        const m = body.slice(Math.max(0, i - 600), i + 600).match(/"name"\s*:\s*"([^"]+)"/i);
+        if (m) return decodeEntities(m[1].trim());
+    }
+    const t = body.match(/<title>([^<]+?)(?:\s*-\s*Apps on Google Play)?<\/title>/i);
+    if (t) return decodeEntities(t[1].trim());
+    const n = body.match(/"name"\s*:\s*"([^"]+)"/i);
+    return n ? decodeEntities(n[1].trim()) : '';
+}
+
+function decodeEntities(s) {
+    const ta = document.createElement('textarea');
+    ta.innerHTML = s;
+    return ta.value;
 }
 
 // ── Row Management ─────────────────────────────────────────────────────────────
