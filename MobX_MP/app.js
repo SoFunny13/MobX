@@ -800,7 +800,8 @@ async function fetchAppCategory(url) {
     // ── Google Play ──
     const gpMatch = url.match(/play\.google\.com\/store\/apps\/details\?.*?id=([a-zA-Z0-9_.]+)/i);
     if (gpMatch) {
-        return await fetchGooglePlayCategory(gpMatch[1]);
+        const glMatch = url.match(/[?&]gl=([a-zA-Z]{2})\b/i);
+        return await fetchGooglePlayCategory(gpMatch[1], glMatch ? glMatch[1] : '');
     }
 
     return { vertical: 'other', appName: '' };
@@ -850,18 +851,30 @@ async function fetchAppStoreCategory(appId, country) {
     return { vertical: 'other', appName: '' };
 }
 
-async function fetchGooglePlayCategory(packageName) {
-    // jina.ai reader (primary) + raw-HTML proxies (fallback). 16s budget — the big raw-HTML
-    // proxies are slow; jina is first and fast, so the common case returns in a few seconds.
-    const pageUrl = `https://play.google.com/store/apps/details?id=${packageName}&hl=en&gl=us`;
-    const body = await fetchViaProxies(pageUrl, { proxies: GP_PROXIES, timeoutMs: 16000 });
-    if (!body) throw new Error('Google Play fetch failed (all proxies)');
+async function fetchGooglePlayCategory(packageName, geo) {
+    // Region-locked apps return a "Not Found" page (no category) in the wrong storefront.
+    // Try the URL's own gl first, then a sweep of common markets, stopping at the first
+    // storefront where the app is actually listed. jina is first+fast (16s budget covers the
+    // slow raw-HTML fallback proxies), so global apps and geo-targeted links resolve in one fetch.
+    const regions = [];
+    if (geo) regions.push(geo.toLowerCase());
+    for (const r of ['us', 'mx', 'br', 'id', 'in', 'ng', 'tr', 'ph']) {
+        if (!regions.includes(r)) regions.push(r);
+    }
 
-    const vertical = extractGooglePlayVertical(body);
-    const appName = extractGooglePlayName(body);
-    // vertical 'other' = page fetched but category not recognised (e.g. consent/region
-    // interstitial) → caller shows "category not detected", not "fetch failed".
-    return { vertical, appName };
+    let fetched = false;
+    for (const gl of regions) {
+        const pageUrl = `https://play.google.com/store/apps/details?id=${packageName}&hl=en&gl=${gl}`;
+        const body = await fetchViaProxies(pageUrl, { proxies: GP_PROXIES, timeoutMs: 16000 });
+        if (!body) continue;                                    // proxy/network failure → next storefront
+        fetched = true;
+        const appName = extractGooglePlayName(body);
+        if (!appName || /^not found$/i.test(appName)) continue; // not listed here → next storefront
+        // vertical 'other' = listed but genre unrecognised → caller shows "category not detected".
+        return { vertical: extractGooglePlayVertical(body), appName };
+    }
+    if (!fetched) throw new Error('Google Play fetch failed (all proxies)');  // → "fetch failed"
+    return { vertical: 'other', appName: '' };                  // listed nowhere we tried → "category not detected"
 }
 
 /**
