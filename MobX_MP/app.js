@@ -62,13 +62,25 @@ const CORS_PROXIES = [
       read:  async r => await r.text() },
 ];
 
-// Google Play page fetch. The jina.ai reader is primary: fast, ~14KB cleaned text
-// (vs ~1.2MB raw HTML), reliably up, and CORS-enabled. It returns Markdown rather than
-// HTML, so extraction below handles both shapes. The raw-HTML proxies are the fallback.
+// Google Play page fetch. The jina.ai reader is primary: fast, ~3.4KB cleaned Markdown
+// (vs ~1.2MB raw HTML), reliably up, and CORS-enabled. Since June 2026 its Markdown no
+// longer carries the /store/apps/category/<SLUG> link, so it only yields the app name and
+// whether the app is listed in a storefront; the category is then fetched separately via
+// GP_HTML_PROXIES. The raw-HTML proxies remain as fallback for the listing check too.
 const GP_PROXIES = [
     { build: t => 'https://r.jina.ai/' + encodeURIComponent(t),
       read:  async r => await r.text() },
     ...CORS_PROXIES,
+];
+
+// Raw-HTML Play page fetch — the HTML always carries the JSON-LD "applicationCategory".
+// jina's X-Return-Format: html mode returns the upstream HTML verbatim and its CORS
+// preflight allows the custom header (verified 2026-06-10).
+const GP_HTML_PROXIES = [
+    { build: t => 'https://r.jina.ai/' + encodeURIComponent(t),
+      headers: { 'X-Return-Format': 'html' },
+      read:  async r => await r.text() },
+    ...CORS_PROXIES,   // allorigins/codetabs down as of 2026-06-10, kept as future fallback
 ];
 
 /**
@@ -81,7 +93,7 @@ async function fetchViaProxies(targetUrl, { proxies = CORS_PROXIES, timeoutMs = 
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
-            const resp = await fetch(p.build(targetUrl), { signal: ctrl.signal });
+            const resp = await fetch(p.build(targetUrl), { signal: ctrl.signal, headers: p.headers });
             if (!resp.ok) continue;
             const body = await p.read(resp);
             if (body && body.length >= minLength) return body;
@@ -870,8 +882,16 @@ async function fetchGooglePlayCategory(packageName, geo) {
         fetched = true;
         const appName = extractGooglePlayName(body);
         if (!appName || /^not found$/i.test(appName)) continue; // not listed here → next storefront
+        let vertical = extractGooglePlayVertical(body);
+        if (vertical === 'other') {
+            // jina's Markdown lost the category link (June 2026) — re-fetch the same page
+            // as raw HTML, which carries the JSON-LD applicationCategory. minLength 5000:
+            // a real Play page is ~1.2MB, so short proxy error stubs don't pass.
+            const html = await fetchViaProxies(pageUrl, { proxies: GP_HTML_PROXIES, timeoutMs: 16000, minLength: 5000 });
+            if (html) vertical = extractGooglePlayVertical(html);
+        }
         // vertical 'other' = listed but genre unrecognised → caller shows "category not detected".
-        return { vertical: extractGooglePlayVertical(body), appName };
+        return { vertical, appName };
     }
     if (!fetched) throw new Error('Google Play fetch failed (all proxies)');  // → "fetch failed"
     return { vertical: 'other', appName: '' };                  // listed nowhere we tried → "category not detected"
