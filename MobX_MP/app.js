@@ -29,8 +29,8 @@ const BRANDS = {
         name: 'MobX',
         agencyName: 'MobX Agency',
         logoBase64: LOGO_MOBX_BASE64,
-        excelHeaderHex: '0000E1',      // blue of the 2026 logo
-        excelHeaderLightHex: 'BFBFF7', // light tint of 0000E1
+        excelHeaderHex: '4285F4',
+        excelHeaderLightHex: 'BDD6EE',
         logoEmuWidth: 2371725,
         logoEmuHeight: 600837        // PNG 600×152 → 3.947:1 (2026 logo)
     },
@@ -2088,6 +2088,10 @@ function exportToExcel() {
         ];
     }
 
+    // ── Drop the empty separator column E (all modes) ──
+    dropSheetColumn(ws, 4);
+    ws['!cols'][3] = { wch: 11 }; // Period: room for "14 days" / "1 month" without the old gap
+
     // ── Create workbook & inject logo ──
     const wb = XLSX.utils.book_new();
     const sheetName = getTrafficType() === 'web'
@@ -2101,6 +2105,44 @@ function exportToExcel() {
     const xlsxData = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
     injectLogoAndDownload(xlsxData, fileName, sheetName, brand.logoBase64, brand.logoEmuWidth, brand.logoEmuHeight);
+}
+
+// ── Remove a column from a SheetJS worksheet ───────────────────────────────────
+// Shifts cells, formula references, column widths, merges and !ref one column left.
+function dropSheetColumn(ws, col) {
+    const shiftRefs = f => f.replace(/(^|[^A-Za-z0-9_.$])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])/g,
+        (m, pre, d1, letters, d2, row) => {
+            const c = XLSX.utils.decode_col(letters);
+            if (c === col) throw new Error('Formula references the removed column: ' + f);
+            return pre + d1 + (c > col ? XLSX.utils.encode_col(c - 1) : letters) + d2 + row;
+        });
+
+    const moved = {};
+    for (const addr of Object.keys(ws)) {
+        if (addr[0] === '!') continue;
+        const cell = ws[addr];
+        delete ws[addr];
+        const { r, c } = XLSX.utils.decode_cell(addr);
+        if (c === col) continue;
+        if (cell.f) cell.f = shiftRefs(cell.f);
+        moved[XLSX.utils.encode_cell({ r, c: c > col ? c - 1 : c })] = cell;
+    }
+    Object.assign(ws, moved);
+
+    if (ws['!cols']) ws['!cols'].splice(col, 1);
+    if (ws['!merges']) {
+        ws['!merges'] = ws['!merges']
+            .map(m => ({
+                s: { r: m.s.r, c: m.s.c > col ? m.s.c - 1 : m.s.c },
+                e: { r: m.e.r, c: m.e.c >= col ? m.e.c - 1 : m.e.c },
+            }))
+            .filter(m => m.e.c >= m.s.c && !(m.s.r === m.e.r && m.s.c === m.e.c));
+    }
+    if (ws['!ref']) {
+        const rng = XLSX.utils.decode_range(ws['!ref']);
+        if (rng.e.c >= col) rng.e.c--;
+        ws['!ref'] = XLSX.utils.encode_range(rng);
+    }
 }
 
 // ── Logo injection into xlsx zip ────────────────────────────────────────────────
