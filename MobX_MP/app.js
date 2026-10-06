@@ -29,10 +29,10 @@ const BRANDS = {
         name: 'MobX',
         agencyName: 'MobX Agency',
         logoBase64: LOGO_MOBX_BASE64,
-        excelHeaderHex: '4285F4',
-        excelHeaderLightHex: 'BDD6EE',
+        excelHeaderHex: '0000E1',      // blue of the 2026 logo
+        excelHeaderLightHex: 'BFBFF7', // light tint of 0000E1
         logoEmuWidth: 2371725,
-        logoEmuHeight: 742950        // PNG 1672×520 → 3.215:1
+        logoEmuHeight: 600837        // PNG 600×152 → 3.947:1 (2026 logo)
     },
     gravils: {
         name: 'Gravils',
@@ -1131,7 +1131,7 @@ function applyBenchmarks(tr) {
         const v = ASA_VERTICAL[vertical] || ASA_VERTICAL.other;
         finalCtr = ASA_GLOBAL_TTR;                                       // global Search Results TTR
         finalCr  = v.cr;                                                 // per-vertical CR (no GEO/platform mult)
-        finalCpi = Math.round(v.cpi * geoMult.cpi * curRate * 10) / 10;  // US baseline × GEO mult (already AppTweak-calibrated)
+        finalCpi = Math.round(v.cpi * geoMult.cpi * cpiMult * curRate * 10) / 10;  // US baseline × GEO mult (already AppTweak-calibrated) × agency margin
     }
 
     // 6. Apply
