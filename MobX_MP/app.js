@@ -2088,7 +2088,12 @@ function exportToExcel() {
         ];
     }
 
-    // ── Drop the empty separator column E (all modes) ──
+    // ── Drop unused columns: the "/" and "1" next to CPI/CPA (H, I) in installs/purchases modes,
+    //    and the empty separator E in all modes. Highest index first so lower indices stay valid. ──
+    if (getTrafficType() !== 'web' && !isCommissionMode()) {
+        dropSheetColumn(ws, 8);
+        dropSheetColumn(ws, 7);
+    }
     dropSheetColumn(ws, 4);
     ws['!cols'][3] = { wch: 11 }; // Period: room for "14 days" / "1 month" without the old gap
 
