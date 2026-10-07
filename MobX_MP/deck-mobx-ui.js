@@ -162,19 +162,39 @@ function collect(opts) {
     });
     const buy = group(buyIdx, 'f');
 
-    let funnel = null;
+    // The funnel sits on the same column grid as the buy table (as in the reference deck), rows in
+    // the same order. A CPI plan has one funnel column too many (…, CR, purchases, cost per purchase):
+    // CPM is left out there — the least telling number for an install campaign.
+    if (funnelIdx.length > buyIdx.length) {
+        const cpm = funnelIdx.find(i => cols[i].key === 'cpm');
+        if (cpm != null) funnelIdx = funnelIdx.filter(i => i !== cpm);
+    }
+    // One column grid for all tables on a slide, so the columns stay aligned. If the funnel has more
+    // columns than the buy table (e.g. with registrations), the grid follows the funnel and the
+    // number columns of the buy table span two grid cells. Very wide funnels (more than twice the
+    // buy table) are split into parts on the buy table's grid.
+    const G = buyIdx.length;
+    let funnel = null, funnelLabelled = null;
     if (funnelIdx.length) {
-        // with several rows the funnel table gets identifying columns in front
-        const ids = [];
-        if (useful.length > 1) {
-            ids.push(pos('channel'));
-            const chans = useful.map(r => r[pos('channel')]);
-            if (new Set(chans).size < chans.length) ids.push(pos('platform'));
-            if (new Set(useful.map(r => r[pos('geo')])).size > 1) ids.push(pos('geo'));
+        const F = funnelIdx.length;
+        const chunks = [];
+        if (F <= 2 * G) {
+            chunks.push(funnelIdx);
+            buy.gridN = Math.max(G, F);
+            buy.spans = buyIdx.map((x, p) => (p >= G - (buy.gridN - G) ? 2 : 1));
+        } else {
+            buy.gridN = G;
+            for (let i = 0; i < F; i += G) chunks.push(funnelIdx.slice(i, i + G));
         }
-        funnel = group(ids.concat(funnelIdx), 'o');
-        funnel.lead = ids.length > 0;
-        funnel.total = ids.map((x, p) => p === 0 ? 'Итого' : '').concat(funnelIdx.map(i => total(cols[i].key)));
+        funnel = chunks.map(ch => Object.assign(group(ch, 'o'), { lead: false, gridN: buy.gridN, total: ch.map(i => total(cols[i].key)) }));
+        // funnel on its own slide (layout "split"): identifying columns in front
+        const ids = [pos('channel')];
+        const chans = useful.map(r => r[pos('channel')]);
+        if (new Set(chans).size < chans.length) ids.push(pos('platform'));
+        if (new Set(useful.map(r => r[pos('geo')])).size > 1) ids.push(pos('geo'));
+        funnelLabelled = chunks.map(ch => Object.assign(group(ids.concat(ch), 'o'), {
+            total: ids.map((x, p) => p === 0 ? 'Итого' : '').concat(ch.map(i => total(cols[i].key)))
+        }));
     }
 
     // headline: main volume first (installs for CPI plans, the event for CPA plans)
@@ -210,7 +230,7 @@ function collect(opts) {
         coverPills: [{ text: 'Период: ' + per.label }].concat(vertical ? [{ text: vertical }] : []),
         planPills: [{ text: appName }].concat(vertical ? [{ text: vertical }] : []).filter(p => p.text),
         headline,
-        plan: { buy, funnel },
+        plan: { buy, funnel, funnelLabelled },
         summary,
         emails: (opts.emails && opts.emails.length) ? opts.emails : ['go@mobx.agency'],
         _rowCount: useful.length

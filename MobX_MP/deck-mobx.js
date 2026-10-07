@@ -241,23 +241,31 @@ function buildContacts(doc, data) {
 // ── Media-plan slide ───────────────────────────────────────────────────────
 /** group = { kind:'f'|'o', cols:[label], rows:[[cell]], total:[cell]|null, lead:bool } */
 function buildTable(doc, group, withTotal) {
-    const n = group.cols.length;
+    const n = group.gridN || group.cols.length;   // tables on one slide share one column grid
+    const span = j => (group.spans && group.spans[j] > 1 ? `grid-column:span ${group.spans[j]}` : null);
+    const cellAttrs = (j, extra) => {
+        const a = {};
+        if (extra) a.class = extra;
+        const sp = span(j);
+        if (sp) a.style = sp;
+        return a;
+    };
     const t = h(doc, 'div', { class: 't' });
     const tpl = `repeat(${n},minmax(0,1fr));column-gap:${n >= 10 ? 10 : 16}px`;
     const hd = h(doc, 'div', { class: 'grid hd ' + group.kind, style: 'grid-template-columns:' + tpl });
-    group.cols.forEach(c => hd.appendChild(h(doc, 'div', null, esc(c))));
+    group.cols.forEach((c, j) => hd.appendChild(h(doc, 'div', cellAttrs(j), esc(c))));
     t.appendChild(hd);
     t.appendChild(h(doc, 'div', { class: 'dash' }));
     group.rows.forEach((r, i) => {
         if (i > 0) t.appendChild(h(doc, 'div', { class: 'dash' }));
         const row = h(doc, 'div', { class: 'grid row', style: 'grid-template-columns:' + tpl });
-        r.forEach((v, j) => row.appendChild(h(doc, 'div', (j === 0 && group.lead) ? { class: 'lead' } : null, esc(v))));
+        r.forEach((v, j) => row.appendChild(h(doc, 'div', cellAttrs(j, j === 0 && group.lead ? 'lead' : null), esc(v))));
         t.appendChild(row);
     });
     if (withTotal && group.total) {
         t.appendChild(h(doc, 'div', { class: 'solid' }));
         const row = h(doc, 'div', { class: 'grid row tot', style: 'grid-template-columns:' + tpl });
-        group.total.forEach((v, j) => row.appendChild(h(doc, 'div', (j === 0 && group.lead) ? { class: 'lead' } : null, esc(v))));
+        group.total.forEach((v, j) => row.appendChild(h(doc, 'div', cellAttrs(j, j === 0 && group.lead ? 'lead' : null), esc(v))));
         t.appendChild(row);
     }
     return t;
@@ -293,8 +301,8 @@ function buildPlanSlide(doc, data, spec) {
     s.appendChild(region);
 
     // separator + budget summary (bottom of the card)
-    s.appendChild(h(doc, 'div', { class: 'abs', style: `left:${TABLE_X}px;top:910px;width:${TABLE_W}px;border-top:2px solid ${LINE_SOFT}` }));
     if (spec.isLast) {
+        s.appendChild(h(doc, 'div', { class: 'abs', style: `left:${TABLE_X}px;top:910px;width:${TABLE_W}px;border-top:2px solid ${LINE_SOFT}` }));
         const sum = data.summary || [];
         const box = h(doc, 'div', { class: 'abs nw', style: `right:${SLIDE_W - TABLE_X - TABLE_W}px;top:${topFor(992, 64)}px;display:flex;align-items:baseline;gap:32px` });
         sum.forEach((it, i) => {
@@ -347,17 +355,18 @@ function chunkBounds(n, k) {
     for (let i = 0; i < n; i += size) out.push([i, Math.min(n, i + size)]);
     return out;
 }
-function slice(g, a, b) { return { kind: g.kind, lead: g.lead, cols: g.cols, rows: g.rows.slice(a, b), total: g.total }; }
+function slice(g, a, b) { return { kind: g.kind, lead: g.lead, gridN: g.gridN, spans: g.spans, cols: g.cols, rows: g.rows.slice(a, b), total: g.total }; }
 
 function expandOption(plan, k, layout) {
     const n = plan.buy.rows.length;
     const bounds = chunkBounds(n, k);
     const specs = [];
     if (layout === 'both') {
-        bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.buy, a, b), slice(plan.funnel, a, b)], withTotal: i === bounds.length - 1 }));
+        bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.buy, a, b)].concat(plan.funnel.map(f => slice(f, a, b))), withTotal: i === bounds.length - 1 }));
     } else { // split: buy slides, then funnel slides
         bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.buy, a, b)], withTotal: i === bounds.length - 1 }));
-        bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.funnel, a, b)], withTotal: i === bounds.length - 1 }));
+        const lf = plan.funnelLabelled || plan.funnel;   // alone on a slide: with the channel column
+        bounds.forEach(([a, b], i) => specs.push({ groups: lf.map(f => slice(f, a, b)), withTotal: i === bounds.length - 1 }));
     }
     specs.forEach((sp, i) => { sp.isLast = i === specs.length - 1; });
     return specs;
@@ -380,7 +389,7 @@ function evaluate(doc, data, specs) {
 function planTables(doc, data) {
     const plan = data.plan;
     const n = Math.max(1, plan.buy.rows.length);
-    const layouts = plan.funnel ? ['both', 'split'] : ['buyonly'];
+    const layouts = plan.funnel && plan.funnel.length ? ['both', 'split'] : ['buyonly'];
     const options = [];
     for (let k = 1; k <= Math.min(n, MAX_SLIDES); k++) {
         layouts.forEach((l, pref) => {
