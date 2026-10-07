@@ -5,8 +5,8 @@
    recalculation) and lays it out on 1920×1080 slides in the MobX style:
      cover (blue) → media-plan slide(s) → closing slide (black)
    The plan slide repeats the Excel: info row (Client / Campaign / Document /
-   Period / Vertical), "(01) Размещение и бюджет" and "(02) Прогнозные
-   показатели" side by side, and the budget cards "net + VAT = gross".
+   Period / Vertical), "(01) Placement & budget" and "(02) Forecast metrics"
+   side by side (data.lang 'en' by default, 'ru' = wording of the reference), and the budget cards "net + VAT = gross".
    Tables are auto-fitted: every table size derives from one scale (--k, 1 =
    reference size); the planner tries both tables on one slide, the tables on
    separate slides, and row pagination, and keeps the option with the fewest
@@ -37,6 +37,25 @@ const CARD_TOP = 410;           // top of the table cards
 const SUM_H = 142, SUM_GAP = 22, SLIDE_BOTTOM = 1030;
 
 const A = () => window.MOBX_DECK_ASSETS || {};
+
+// Slide texts; data.lang = 'en' (default) | 'ru' (wording of the Metro reference deck)
+const TEXT = {
+    en: {
+        cover: ['Internet placement', 'media plan'],
+        agency: 'Mobile marketing agency',
+        plan: m => `Media plan: ${m} model`,
+        sec1: 'Placement & budget', sec2: 'Forecast metrics',
+        closing: b => `<span style="color:${b}">Together</span> we build<br>projects that<br>change the market`
+    },
+    ru: {
+        cover: ['Медиаплан', 'интернет\u2011размещения'],
+        agency: 'Агентство мобильного маркетинга',
+        plan: m => `Медиаплан: модель ${m}`,
+        sec1: 'Размещение и бюджет', sec2: 'Прогнозные показатели',
+        closing: b => `Создавать<br><span style="color:${b}">вместе</span> проекты,<br>меняющие рынок`
+    }
+};
+const T = data => TEXT[data.lang] || TEXT.en;
 
 // Golos Text: ascent 0.98, descent 0.22 em → in a line box of height L the
 // baseline sits L/2 + 0.38·fs below its top.
@@ -160,7 +179,7 @@ function brandFrame(doc, s, bandColor) {
     s.appendChild(svgBox(doc, a.logoBigSvg, `left:${b[0]}px;top:${b[1]}px;width:${b[2]}px;height:${b[3]}px`));
 }
 function footer(doc, data, color) {
-    return textAt(doc, esc('Агентство мобильного маркетинга · ' + (data.year || new Date().getFullYear())), { fs: 22, baseline: 1022, left: 40, color });
+    return textAt(doc, esc(T(data).agency + ' · ' + (data.year || new Date().getFullYear())), { fs: 22, baseline: 1022, left: 40, color });
 }
 
 function buildCover(doc, data) {
@@ -177,7 +196,7 @@ function buildCover(doc, data) {
         nameBox = textAt(doc, esc(data.client), { fs: 44, baseline: 560, left: 40, w: 500, color: BG });
         s.appendChild(nameBox);
     }
-    const lines = (data.coverTitle && data.coverTitle.length ? data.coverTitle : ['Медиаплан', 'интернет‑размещения']);
+    const lines = (data.coverTitle && data.coverTitle.length ? data.coverTitle : T(data).cover);
     const title = textAt(doc, lines.map(esc).join('<br>'), { fs: 64, lh: 68, w: 500, baseline: 698, left: 40, color: BG });
     title.style.letterSpacing = '-0.03em';
     s.appendChild(title);
@@ -205,7 +224,7 @@ function buildCover(doc, data) {
 function buildClosing(doc, data) {
     const s = h(doc, 'section', { class: 'slide', 'data-kind': 'closing', style: `background:#000;color:${BG}` });
     brandFrame(doc, s, BLUE);
-    const t = textAt(doc, `Создавать<br><span style="color:${BLUE}">вместе</span> проекты,<br>меняющие рынок`,
+    const t = textAt(doc, T(data).closing(BLUE),
         { fs: 70, lh: 77, w: 500, baseline: 790, left: 40, color: BG });
     t.style.letterSpacing = '-0.02em';
     s.appendChild(t);
@@ -288,9 +307,9 @@ function buildPlanSlide(doc, data, spec) {
     const s = h(doc, 'section', { class: 'slide', 'data-kind': 'plan' });
     const b = a.logoBox || [40, 50, 151.87, 41.83];
     s.appendChild(svgBox(doc, a.logoSvg, `left:${b[0]}px;top:${b[1]}px;width:${b[2]}px;height:${b[3]}px`));
-    s.appendChild(textAt(doc, 'Агентство мобильного маркетинга', { fs: 18, baseline: 70, right: 40, color: GRAY40 }));
+    s.appendChild(textAt(doc, esc(T(data).agency), { fs: 18, baseline: 70, right: 40, color: GRAY40 }));
 
-    const title = textAt(doc, esc('Медиаплан: модель ' + (data.model || '')), { fs: 60, w: 500, baseline: 184, left: 40 });
+    const title = textAt(doc, esc(T(data).plan(data.model || '')), { fs: 60, w: 500, baseline: 184, left: 40 });
     title.style.letterSpacing = '-0.03em';
     s.appendChild(title);
     const pills = h(doc, 'div', { class: 'abs', style: 'top:140px;display:flex;gap:12px' });
@@ -322,7 +341,7 @@ function buildPlanSlide(doc, data, spec) {
         const [x, w] = geo[i];
         const sec = h(doc, 'div', { class: 'sec abs', style: `left:${x + 8}px;top:${topFor(388, 20)}px` });
         sec.appendChild(h(doc, 'span', { class: 'n' }, g.kind === 'k' ? '(02)' : '(01)'));
-        sec.appendChild(h(doc, 'span', { class: 't' }, g.kind === 'k' ? 'Прогнозные показатели' : 'Размещение и бюджет'));
+        sec.appendChild(h(doc, 'span', { class: 't' }, esc(g.kind === 'k' ? T(data).sec2 : T(data).sec1)));
         s.appendChild(sec);
         const card = h(doc, 'div', { class: 'card', style: `left:${x}px;top:${CARD_TOP}px;width:${w}px` });
         card.appendChild(buildTable(doc, g, spec.withTotal, g.kind === 'k' ? 16 : 17, g.kind === 'k' ? 18 : 19));

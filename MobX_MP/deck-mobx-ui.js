@@ -10,7 +10,8 @@
    Nothing in app.js is modified; this file only reads the page.
 
    window.MobXDeckUI.collect(opts) → data for MobXDeck.render(doc, data)
-     opts: { clientLogo | appIcon (data URL), noVat, currencySign (default true),
+     opts: { lang: 'en' (default) | 'ru', clientLogo | appIcon (data URL), client (name shown
+             instead of the Client field), noVat, currencySign (default true),
              coverTitle: ['line 1', 'line 2'], year }
    ═══════════════════════════════════════════════════════════════════════════ */
 (function () {
@@ -46,13 +47,14 @@ function toNum(v) {
     const n = parseFloat(s);
     return isFinite(n) ? n : null;
 }
+let DEC = ',';   // decimal separator: ',' in Russian, '.' in English (thousands: space in both)
 function ru(n, dec, trimZeros) {
     let s = n.toFixed(dec);
     if (trimZeros && /\.0+$/.test(s)) s = s.replace(/\.0+$/, '');
     const neg = s[0] === '-';
     if (neg) s = s.slice(1);
     const parts = s.split('.');
-    return (neg ? '-' : '') + parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, NBSP) + (parts[1] ? ',' + parts[1] : '');
+    return (neg ? '-' : '') + parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, NBSP) + (parts[1] ? DEC + parts[1] : '');
 }
 function currencySymbol() {
     const code = ($('currency') || {}).value || 'USD';
@@ -101,6 +103,8 @@ function cellValue(td) {
 // ── Read the finished plan from the page ───────────────────────────────────
 function collect(opts) {
     opts = opts || {};
+    const lang = opts.lang === 'ru' ? 'ru' : 'en';
+    DEC = lang === 'ru' ? ',' : '.';
     const sym = opts.currencySign === false ? '' : currencySymbol();
     const cols = Array.from(document.querySelectorAll('#mediaplan-head th')).map((th, idx) => {
         const cls = Array.from(th.classList).find(c => c.indexOf('col-') === 0);
@@ -170,15 +174,16 @@ function collect(opts) {
 
     const vsel = $('vertical');
     const vertical = vsel && vsel.value && vsel.value !== 'other' ? vsel.options[vsel.selectedIndex].text : '';
-    const client = (($('client') || {}).value || '').trim();
+    const client = (opts.client || ($('client') || {}).value || '').trim();
     const period = (($('period') || {}).value || (useful[0] ? useful[0][pos('period')] : '') || '').trim();
     return {
+        lang,
         model: isCpa ? 'CPA' : 'CPI',
         client,
         clientLogo: opts.clientLogo || opts.appIcon || null,
         year: opts.year || new Date().getFullYear(),
         coverTitle: opts.coverTitle || null,
-        coverPills: [{ text: 'Период: ' + periodRu(period) }].concat(vertical ? [{ text: vertical }] : []),
+        coverPills: [{ text: lang === 'ru' ? 'Период: ' + periodRu(period) : 'Period: ' + period }].concat(vertical ? [{ text: vertical }] : []),
         sources: Array.from(new Set(chans)),
         info: [
             { label: 'Client', value: client || '—' },
@@ -199,7 +204,7 @@ function fileName() {
 }
 async function openPreview() {
     const clientLogo = window.GravilsDeckUI && window.GravilsDeckUI.getLogo ? window.GravilsDeckUI.getLogo() : null;
-    const data = collect({ clientLogo });
+    const data = collect({ clientLogo, lang: ($('deck-lang') || {}).value || 'en' });
     if (!data._rowCount) { alert('Add at least one source with a budget to the media plan first.'); return; }
     const modal = $('deck-modal'), frame = $('deck-frame'), status = $('deck-status');
     modal.style.display = 'flex';
