@@ -70,6 +70,8 @@ function fmt(n, dec, fixed) {
     const parts = s.split('.');
     return (neg ? '-' : '') + group3(parts[0]) + (parts[1] ? '.' + parts[1] : '');
 }
+/** Currency sign: the dollar goes before the number ($8, $10 000), others after (10 000 ₽). */
+function withSym(v, sym) { return !sym ? v : sym === '$' ? '$' + v : v + NBSP + sym; }
 function formatCell(raw, kind, sym, unit) {
     const text = String(raw == null ? '' : raw).trim();
     if (kind === 'text') return text;
@@ -80,11 +82,8 @@ function formatCell(raw, kind, sym, unit) {
         case 'int': return fmt(Math.round(n), 0);
         case 'rate': return fmt(n, 3, true);
         case 'pct': return fmt(n, 2, true) + '%';
-        case 'money2': return fmt(n, 2, n < 1000) + NBSP + sym;
-        case 'money': {
-            const v = fmt(n, n < 1 ? 4 : 2, false) + NBSP + sym;
-            return unit ? v + NBSP + '/' + NBSP + '1' : v;
-        }
+        case 'money2': return withSym(fmt(n, 2, n < 1000), sym);
+        case 'money': return withSym(fmt(n, n < 1 ? 4 : 2, false), sym);   // no "/ 1" after the unit price
     }
     return text;
 }
@@ -190,7 +189,7 @@ function readPlan(opts) {
 
 function readSummary() {
     const sym = currencySymbol();
-    const money = t => { const n = toNum(t); return n == null ? t : fmt(n, 2, false) + NBSP + sym; };
+    const money = t => { const n = toNum(t); return n == null ? t : withSym(fmt(n, 2, false), sym); };
     const out = [];
     const vis = el => el && el.style.display !== 'none';
     const netLabel = ($('vat-net-label') || {}).textContent || 'Max Placement Cost Net';

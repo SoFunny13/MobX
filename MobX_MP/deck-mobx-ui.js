@@ -4,8 +4,8 @@
    • Reads the media plan exactly as it is shown on the page (no recalculation)
      and prepares it for deck-mobx.js in the format of the Metro reference deck:
      column names as in the Excel (Channel, Platform, …), numbers in Russian
-     format with the currency sign (1 400, 41,27 ₽, 1,40%), the unit price as
-     "220 ₽ / 1", rows grouped by channel.
+     format with the currency sign (1 400, 41,27 ₽, 1,40%; the dollar sign goes
+     before the number: $1 400), rows grouped by channel.
    • Preview / print for the MobX brand reuse the modal of deck-ui.js.
    Nothing in app.js is modified; this file only reads the page.
 
@@ -71,7 +71,7 @@ function fmt(raw, kind, sym) {
     if (kind === 'geo') return (typeof extractGeoCode === 'function' ? extractGeoCode(text) : '') || text;
     const n = toNum(text);
     if (n == null) return text === '' ? '' : '—';
-    const cur = v => v + (sym ? NBSP + sym : '');
+    const cur = v => !sym ? v : sym === '$' ? '$' + v : v + NBSP + sym;   // $1 400 · 1 400 ₽
     switch (kind) {
         case 'int': return ru(Math.round(n), 0);
         case 'pct': return ru(n, 2) + '%';
@@ -122,10 +122,7 @@ function collect(opts) {
     const label = i => (COL[cols[i].key] || [cols[i].key])[0];
     const kind = i => (COL[cols[i].key] || [0, 'text'])[1];
     const channelOf = r => String(r[pos('channel')] || '').trim().replace(/\s*CoDev$/i, '');   // as in the Excel
-    const cell = (r, i, unit) => {
-        let v = cols[i].key === 'channel' ? channelOf(r) : fmt(r[i], kind(i), sym);
-        return unit && v && v !== '—' ? { v, unit: true } : v;
-    };
+    const cell = (r, i) => (cols[i].key === 'channel' ? channelOf(r) : fmt(r[i], kind(i), sym));
     const total = key => {
         const el = $(TOTAL_ID[key] || '');
         return el ? fmt(el.textContent, (COL[key] || [0, 'int'])[1], sym) : '';
@@ -134,28 +131,27 @@ function collect(opts) {
     const chans = useful.map(channelOf);
     const gb = chans.map((c, i) => i < chans.length - 1 && chans[i + 1] !== c);
 
-    // (01) placement & budget: identity + volume + unit price ("/ 1") + budget
+    // (01) placement & budget: identity + volume + unit price + budget
     const buyIdx = bIdx >= 2 ? cols.map((c, i) => i).filter(i => i <= 3 || (i >= bIdx - 2 && i <= bIdx)) : cols.map((c, i) => i);
-    const unitIdx = bIdx >= 1 ? bIdx - 1 : -1;
     // (02) forecast: everything else; in a CPA plan the CPI column is left out (as in the reference)
     const funnelIdx = cols.map((c, i) => i).filter(i => buyIdx.indexOf(i) < 0 && !(isCpa && cols[i].key === 'cpi'));
 
-    const group = (idxs, k, lead, unit) => ({
+    const group = (idxs, k, lead) => ({
         kind: k, lead,
         cols: idxs.map(label),
-        rows: useful.map(r => idxs.map(i => cell(r, i, unit && i === unitIdx))),
+        rows: useful.map(r => idxs.map(i => cell(r, i))),
         gb: gb.slice(),
         total: idxs.map((i, p) => (p === 0 && lead) ? 'Total' : (TOTAL_ID[cols[i].key] ? total(cols[i].key) : ''))
     });
-    const buy = group(buyIdx, 'b', true, true);
+    const buy = group(buyIdx, 'b', true);
     let funnel = null, funnelLabelled = null;
     if (funnelIdx.length) {
-        funnel = group(funnelIdx, 'k', false, false);
+        funnel = group(funnelIdx, 'k', false);
         // the forecast on a slide of its own: channel (and platform / geo when they vary) in front
         const ids = [pos('channel')];
         if (new Set(useful.map(r => r[pos('platform')])).size > 1) ids.push(pos('platform'));
         if (new Set(useful.map(r => r[pos('geo')])).size > 1) ids.push(pos('geo'));
-        funnelLabelled = group(ids.concat(funnelIdx), 'k', true, false);
+        funnelLabelled = group(ids.concat(funnelIdx), 'k', true);
     }
 
     // budget cards

@@ -27,7 +27,6 @@ const BLUE = '#0000E1', BG = '#F8F8F8', INK = '#000000';
 const GRAY40 = '#959595';       // black 40% over #F8F8F8 (tagline, labels, + / =)
 const GRAY56 = '#707070';       // black 56% over white (budget card labels)
 const LINE = '#E4E4E4';         // light separators
-const SLASH = '#999999';        // "/" in the unit price, black 40% over white
 const ON_BLUE = '#C6C6F3';      // #F8F8F8 80% over blue (gross card label)
 const ON_BLACK = '#AEAEAE';     // #F8F8F8 70% over black (closing footer)
 const K_MIN = 0.74;             // smallest comfortable table scale (≈14px text)
@@ -105,7 +104,6 @@ table.mt{--k:1;width:100%;border-collapse:separate;border-spacing:0;font-variant
 .mt tr.tot td:last-child{border-right:2px solid ${BLUE};border-radius:0 calc(27px*var(--k)) calc(27px*var(--k)) 0}
 .mt.k tr.tot td:first-child,.mt.k tr.tot td:last-child{border-color:${INK}}
 .mt.lead tr.tot td:first-child{padding-left:calc(22px*var(--k))}
-.mt .sl{color:${SLASH};margin:0 calc(8px*var(--k))}
 
 /* budget cards */
 .sum{display:flex;align-items:flex-start;gap:20px}
@@ -234,11 +232,7 @@ function buildClosing(doc, data) {
 }
 
 // ── Media-plan slide ───────────────────────────────────────────────────────
-/** cell: string, or {v, unit:true} for "price / 1" */
-function cellHtml(c) {
-    if (c && typeof c === 'object') return esc(c.v) + (c.unit ? '<span class="sl">/</span>1' : '');
-    return esc(c);
-}
+function cellHtml(c) { return esc(c); }
 /** group = { kind:'b'|'k', lead, cols:[label], rows:[[cell]], gb:[bool], total:[cell]|null } */
 function buildTable(doc, g, withTotal, hf, df) {
     const t = h(doc, 'table', { class: 'mt' + (g.kind === 'k' ? ' k' : '') + (g.lead ? ' lead' : ''), style: `--hf:${hf}px;--df:${df}px` });
