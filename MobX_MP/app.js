@@ -1638,7 +1638,7 @@ function exportToExcel() {
 
     // ── Currency number format for Excel ──
     const CURRENCY_NUMFMT = {
-        USD: '#,##0\\ "$"',
+        USD: '"$"#,##0',                 // dollar sign before the number
         EUR: '#,##0\\ "\u20AC"',
         RUB: '#,##0\\ "\u20BD"',
         GBP: '#,##0\\ "\u00A3"',
@@ -1648,7 +1648,7 @@ function exportToExcel() {
         INR: '#,##0\\ "\u20B9"',
     };
     const CURRENCY_NUMFMT_DEC = {
-        USD: '#,##0.00\\ "$"',
+        USD: '"$"#,##0.00',              // dollar sign before the number
         EUR: '#,##0.00\\ "\u20AC"',
         RUB: '#,##0.00\\ "\u20BD"',
         GBP: '#,##0.00\\ "\u00A3"',
