@@ -2,14 +2,16 @@
    MobX presentation — integration with Media Plan Generator
    ───────────────────────────────────────────────────────────────────────────
    • Reads the media plan exactly as it is shown on the page (no recalculation)
-     and prepares it for deck-mobx.js: Russian labels, Russian number format
-     (1 400, 0,027, 3,28%), currency sign, headline numbers and period phrase.
+     and prepares it for deck-mobx.js in the format of the Metro reference deck:
+     column names as in the Excel (Channel, Platform, …), numbers in Russian
+     format with the currency sign (1 400, 41,27 ₽, 1,40%), the unit price as
+     "220 ₽ / 1", rows grouped by channel.
    • Preview / print for the MobX brand reuse the modal of deck-ui.js.
    Nothing in app.js is modified; this file only reads the page.
 
    window.MobXDeckUI.collect(opts) → data for MobXDeck.render(doc, data)
-     opts: { appName, appIcon (data URL), emails:[...], noVat, currencySign (default true),
-             event: { title, one, few, many, acc, gen }  // Russian words for the target action }
+     opts: { clientLogo | appIcon (data URL), noVat, currencySign (default true),
+             coverTitle: ['line 1', 'line 2'], year }
    ═══════════════════════════════════════════════════════════════════════════ */
 (function () {
 'use strict';
@@ -17,7 +19,7 @@
 const $ = id => document.getElementById(id);
 const NBSP = ' ';
 
-// ── Russian words ──────────────────────────────────────────────────────────
+// ── Russian period for the cover ("Период: 3 месяца") ──────────────────────
 function plural(n, one, few, many) {
     const a = Math.abs(Math.round(n)) % 100, b = a % 10;
     if (a > 10 && a < 20) return many;
@@ -25,29 +27,18 @@ function plural(n, one, few, many) {
     if (b === 1) return one;
     return many;
 }
-const WORDS = {
-    installs: { title: 'Установки', one: 'установка', few: 'установки', many: 'установок', acc: 'установку', gen: 'установки' },
-    purchases: { title: 'Покупки', one: 'покупка', few: 'покупки', many: 'покупок', acc: 'покупку', gen: 'покупки' },
-    registrations: { title: 'Регистрации', one: 'регистрация', few: 'регистрации', many: 'регистраций', acc: 'регистрацию', gen: 'регистрации' }
-};
-
-/** "14 days" → { label: '14 дней', phrase: 'за 14 дней' }; "1 month" → { '1 месяц', 'за месяц' } */
 function periodRu(p) {
     const raw = String(p || '').trim();
     const m = raw.match(/^(\d+)\s*(days?|weeks?|months?|years?)$/i);
-    if (!m) return { label: raw, phrase: raw ? 'за ' + raw : '' };
+    if (!m) return raw;
     const n = parseInt(m[1], 10), u = m[2].toLowerCase();
     const forms = u.startsWith('day') ? ['день', 'дня', 'дней']
         : u.startsWith('week') ? ['неделя', 'недели', 'недель']
         : u.startsWith('month') ? ['месяц', 'месяца', 'месяцев'] : ['год', 'года', 'лет'];
-    const acc = u.startsWith('week') ? ['неделю', 'недели', 'недель'] : forms;
-    return {
-        label: n + ' ' + plural(n, forms[0], forms[1], forms[2]),
-        phrase: n === 1 ? 'за ' + acc[0] : 'за ' + n + ' ' + plural(n, acc[0], acc[1], acc[2])
-    };
+    return n + ' ' + plural(n, forms[0], forms[1], forms[2]);
 }
 
-// ── Numbers (display only) ─────────────────────────────────────────────────
+// ── Numbers (display only), as in the reference deck ───────────────────────
 function toNum(v) {
     if (v == null) return null;
     const s = String(v).replace(/[\s ,]/g, '').replace(/[^0-9.\-]/g, '');
@@ -55,9 +46,9 @@ function toNum(v) {
     const n = parseFloat(s);
     return isFinite(n) ? n : null;
 }
-function ru(n, maxDec, fixed) {
-    let s = n.toFixed(maxDec);
-    if (!fixed && s.indexOf('.') >= 0) s = s.replace(/\.?0+$/, '');
+function ru(n, dec, trimZeros) {
+    let s = n.toFixed(dec);
+    if (trimZeros && /\.0+$/.test(s)) s = s.replace(/\.0+$/, '');
     const neg = s[0] === '-';
     if (neg) s = s.slice(1);
     const parts = s.split('.');
@@ -68,43 +59,38 @@ function currencySymbol() {
     if (typeof CURRENCY_SYMBOLS !== 'undefined' && CURRENCY_SYMBOLS[code]) return CURRENCY_SYMBOLS[code];
     return { USD: '$', EUR: '€', RUB: '₽', GBP: '£', KZT: '₸', UAH: '₴', BRL: 'R$', INR: '₹' }[code] || '';
 }
+/**
+ * kinds: text · geo · int (1 400) · pct (1,40%) · rate (CPM/CPC: 41,27 ₽) ·
+ *        price (CPI/CPA/cost per …: 220 ₽, 14,29 $, 1 $) · money (budget: 1 000 000 ₽)
+ */
 function fmt(raw, kind, sym) {
     const text = String(raw == null ? '' : raw).trim();
     if (kind === 'text') return text;
     if (kind === 'geo') return (typeof extractGeoCode === 'function' ? extractGeoCode(text) : '') || text;
-    if (kind === 'period') return periodRu(text).label;
     const n = toNum(text);
     if (n == null) return text === '' ? '' : '—';
-    if (kind === 'int') return ru(Math.round(n), 0);
-    if (kind === 'pct') return ru(n, 2) + '%';
-    if (kind === 'money2') return ru(n, 2, true) + (sym ? NBSP + sym : '');   // CPM: 2 decimals, as in the Sheet
-    if (kind === 'money') {
-        // ≥100: whole units; 1–100: two decimals unless whole (1 $, 14,29 $, 2,10 ₽); <1: up to three (0,027 $)
-        const a = Math.abs(n);
-        const v = a >= 100 ? ru(n, 0) : a >= 1 ? (Math.abs(n - Math.round(n)) < 0.005 ? ru(n, 0) : ru(n, 2, true)) : ru(n, 3);
-        return v + (sym ? NBSP + sym : '');
+    const cur = v => v + (sym ? NBSP + sym : '');
+    switch (kind) {
+        case 'int': return ru(Math.round(n), 0);
+        case 'pct': return ru(n, 2) + '%';
+        case 'rate': return cur(ru(n, 2));
+        case 'price': return cur(Math.abs(n) >= 100 ? ru(Math.round(n), 0) : ru(n, 2, true));
+        case 'money': return cur(ru(Math.round(n), 0));
     }
     return text;
 }
 
-// ── Columns ────────────────────────────────────────────────────────────────
-const KIND = {
-    channel: 'text', platform: 'text', geo: 'geo', period: 'period',
-    installs: 'int', views: 'int', clicks: 'int', purchases: 'int', events: 'int', registrations: 'int',
-    cpi: 'money', budget: 'money', cpm: 'money2', cpc: 'money', cpp: 'money', cpa: 'money', 'cost-per-reg': 'money',
-    ctr: 'pct', 'cr-install': 'pct', 'cr-purchase': 'pct', 'cr-reg': 'pct'
+// ── Columns: names as in the Excel export ──────────────────────────────────
+const COL = {
+    channel: ['Channel', 'text'], platform: ['Platform', 'text'], geo: ['Targeting', 'geo'], period: ['Period', 'text'],
+    installs: ['Total installs', 'int'], cpi: ['CPI', 'price'], budget: ['Total cost', 'money'],
+    events: ['Total purchases', 'int'], cpa: ['Cost per purchase', 'price'],
+    views: ['Views', 'int'], cpm: ['CPM', 'rate'], ctr: ['CTR', 'pct'], clicks: ['Total clicks', 'int'], cpc: ['CPC', 'rate'],
+    'cr-install': ['CR install per click', 'pct'],
+    'cr-reg': ['CR install to registration', 'pct'], registrations: ['Total registrations', 'int'], 'cost-per-reg': ['Cost per registration', 'price'],
+    'cr-purchase': ['CR install to purchase', 'pct'], purchases: ['Total purchases', 'int'], cpp: ['Cost per purchase', 'price']
 };
 const TOTAL_ID = { installs: 'total-installs', budget: 'total-cost', views: 'total-views', clicks: 'total-clicks', purchases: 'total-purchases', events: 'total-events', registrations: 'total-registrations' };
-function labelRu(key, ev) {
-    return ({
-        channel: 'Канал', platform: 'Площадка', geo: 'Таргетинг', period: 'Период',
-        installs: 'Установки', cpi: 'Цена установки', budget: 'Бюджет',
-        views: 'Показы', cpm: 'CPM', ctr: 'CTR', clicks: 'Клики', cpc: 'CPC',
-        'cr-install': 'CR в установку', 'cr-purchase': 'CR в ' + ev.acc,
-        purchases: ev.title, events: ev.title, cpp: 'Цена ' + ev.gen, cpa: 'Цена ' + ev.gen,
-        'cr-reg': 'CR в регистрацию', registrations: 'Регистрации', 'cost-per-reg': 'Цена регистрации'
-    })[key] || key;
-}
 
 function cellValue(td) {
     if (!td) return '';
@@ -112,20 +98,10 @@ function cellValue(td) {
     return inp ? inp.value : td.textContent;
 }
 
-function eventWords(opts) {
-    if (opts.event && opts.event.many) return Object.assign({}, WORDS.purchases, opts.event);
-    const th = document.querySelector('#mediaplan-head th.col-purchases, #mediaplan-head th.col-events');
-    const name = th ? th.textContent.replace(/^total\s+/i, '').trim().toLowerCase() : 'purchases';
-    if (name === 'purchases') return WORDS.purchases;
-    // custom CPA event typed in English: used as is
-    return { title: name.charAt(0).toUpperCase() + name.slice(1), one: name, few: name, many: name, acc: name, gen: name };
-}
-
 // ── Read the finished plan from the page ───────────────────────────────────
 function collect(opts) {
     opts = opts || {};
     const sym = opts.currencySign === false ? '' : currencySymbol();
-    const ev = eventWords(opts);
     const cols = Array.from(document.querySelectorAll('#mediaplan-head th')).map((th, idx) => {
         const cls = Array.from(th.classList).find(c => c.indexOf('col-') === 0);
         return { idx, key: cls ? cls.slice(4) : '' };
@@ -138,101 +114,80 @@ function collect(opts) {
     });
     const bIdx = pos('budget');
     const useful = rows.filter(r => bIdx < 0 || toNum(r[bIdx]));
-    const cell = (r, i) => {
-        let v = fmt(r[i], KIND[cols[i].key] || 'text', sym);
-        if (cols[i].key === 'channel') v = v.replace(/\s*CoDev$/i, '');   // same as the Excel export
-        return v;
+    const isCpa = pos('events') >= 0 || pos('cpa') >= 0;
+    const label = i => (COL[cols[i].key] || [cols[i].key])[0];
+    const kind = i => (COL[cols[i].key] || [0, 'text'])[1];
+    const channelOf = r => String(r[pos('channel')] || '').trim().replace(/\s*CoDev$/i, '');   // as in the Excel
+    const cell = (r, i, unit) => {
+        let v = cols[i].key === 'channel' ? channelOf(r) : fmt(r[i], kind(i), sym);
+        return unit && v && v !== '—' ? { v, unit: true } : v;
     };
     const total = key => {
         const el = $(TOTAL_ID[key] || '');
-        return el ? fmt(el.textContent, KIND[key], sym) : '';
+        return el ? fmt(el.textContent, (COL[key] || [0, 'int'])[1], sym) : '';
     };
+    // channel groups: a dark line after the last row of each channel (rows of one channel are adjacent)
+    const chans = useful.map(channelOf);
+    const gb = chans.map((c, i) => i < chans.length - 1 && chans[i + 1] !== c);
 
-    // buy table: identity + volume + unit price + budget (same split as the Gravils deck)
+    // (01) placement & budget: identity + volume + unit price ("/ 1") + budget
     const buyIdx = bIdx >= 2 ? cols.map((c, i) => i).filter(i => i <= 3 || (i >= bIdx - 2 && i <= bIdx)) : cols.map((c, i) => i);
-    // funnel: everything else; in CPA mode the CPI column is left out (as in the reference deck)
-    const isCpa = pos('events') >= 0 || pos('cpa') >= 0;
-    let funnelIdx = cols.map((c, i) => i).filter(i => buyIdx.indexOf(i) < 0 && !(isCpa && cols[i].key === 'cpi'));
+    const unitIdx = bIdx >= 1 ? bIdx - 1 : -1;
+    // (02) forecast: everything else; in a CPA plan the CPI column is left out (as in the reference)
+    const funnelIdx = cols.map((c, i) => i).filter(i => buyIdx.indexOf(i) < 0 && !(isCpa && cols[i].key === 'cpi'));
 
-    const group = (idxs, kind) => ({
-        kind, lead: true,
-        cols: idxs.map(i => labelRu(cols[i].key, ev)),
-        rows: useful.map(r => idxs.map(i => cell(r, i))),
-        total: idxs.map((i, p) => p === 0 ? 'Итого' : total(cols[i].key))
+    const group = (idxs, k, lead, unit) => ({
+        kind: k, lead,
+        cols: idxs.map(label),
+        rows: useful.map(r => idxs.map(i => cell(r, i, unit && i === unitIdx))),
+        gb: gb.slice(),
+        total: idxs.map((i, p) => (p === 0 && lead) ? 'Total' : (TOTAL_ID[cols[i].key] ? total(cols[i].key) : ''))
     });
-    const buy = group(buyIdx, 'f');
-
-    // The funnel sits on the same column grid as the buy table (as in the reference deck), rows in
-    // the same order. A CPI plan has one funnel column too many (…, CR, purchases, cost per purchase):
-    // CPM is left out there — the least telling number for an install campaign.
-    if (funnelIdx.length > buyIdx.length) {
-        const cpm = funnelIdx.find(i => cols[i].key === 'cpm');
-        if (cpm != null) funnelIdx = funnelIdx.filter(i => i !== cpm);
-    }
-    // One column grid for all tables on a slide, so the columns stay aligned. If the funnel has more
-    // columns than the buy table (e.g. with registrations), the grid follows the funnel and the
-    // number columns of the buy table span two grid cells. Very wide funnels (more than twice the
-    // buy table) are split into parts on the buy table's grid.
-    const G = buyIdx.length;
+    const buy = group(buyIdx, 'b', true, true);
     let funnel = null, funnelLabelled = null;
     if (funnelIdx.length) {
-        const F = funnelIdx.length;
-        const chunks = [];
-        if (F <= 2 * G) {
-            chunks.push(funnelIdx);
-            buy.gridN = Math.max(G, F);
-            buy.spans = buyIdx.map((x, p) => (p >= G - (buy.gridN - G) ? 2 : 1));
-        } else {
-            buy.gridN = G;
-            for (let i = 0; i < F; i += G) chunks.push(funnelIdx.slice(i, i + G));
-        }
-        funnel = chunks.map(ch => Object.assign(group(ch, 'o'), { lead: false, gridN: buy.gridN, total: ch.map(i => total(cols[i].key)) }));
-        // funnel on its own slide (layout "split"): identifying columns in front
+        funnel = group(funnelIdx, 'k', false, false);
+        // the forecast on a slide of its own: channel (and platform / geo when they vary) in front
         const ids = [pos('channel')];
-        const chans = useful.map(r => r[pos('channel')]);
-        if (new Set(chans).size < chans.length) ids.push(pos('platform'));
+        if (new Set(useful.map(r => r[pos('platform')])).size > 1) ids.push(pos('platform'));
         if (new Set(useful.map(r => r[pos('geo')])).size > 1) ids.push(pos('geo'));
-        funnelLabelled = chunks.map(ch => Object.assign(group(ids.concat(ch), 'o'), {
-            total: ids.map((x, p) => p === 0 ? 'Итого' : '').concat(ch.map(i => total(cols[i].key)))
-        }));
+        funnelLabelled = group(ids.concat(funnelIdx), 'k', true, false);
     }
 
-    // headline: main volume first (installs for CPI plans, the event for CPA plans)
-    const per = periodRu(($('period') || {}).value || (useful[0] ? useful[0][pos('period')] : ''));
-    const totNum = key => { const el = $(TOTAL_ID[key] || ''); return el ? toNum(el.textContent) : null; };
-    const evKey = pos('events') >= 0 ? 'events' : 'purchases';
-    const nInst = totNum('installs'), nEv = totNum(evKey);
-    const W = (n, w) => plural(n, w.one, w.few, w.many);
-    let headline;
-    if (isCpa) headline = { n1: ru(nEv || 0, 0), w1: W(nEv || 0, ev), n2: nInst != null ? ru(nInst, 0) : null, w2: nInst != null ? W(nInst, WORDS.installs) : '', period: per.phrase };
-    else headline = { n1: ru(nInst || 0, 0), w1: W(nInst || 0, WORDS.installs), n2: nEv ? ru(nEv, 0) : null, w2: nEv ? W(nEv, ev) : '', period: per.phrase };
-
-    // budget summary
+    // budget cards
     const money = t => fmt(t, 'money', sym);
     const vis = el => el && el.style.display !== 'none';
-    const summary = [];
     const vat = !opts.noVat && vis($('vat-row-line'));
     const comm = vis($('commission-row-line'));
-    if (vat || comm) summary.push({ label: 'Бюджет без НДС', value: money($('vat-net').textContent) });
-    if (comm) summary.push({ label: `Комиссия ${($('commission-pct') || {}).value || '0'}%`, value: money($('commission-amount').textContent) });
-    if (vat) summary.push({ label: 'НДС 22%', value: money($('vat-amount').textContent) });
-    summary.push({ label: 'Общий бюджет (gross)', value: money((vat || comm ? $('vat-gross') : $('vat-net')).textContent) });
+    const summary = {
+        net: money($('vat-net').textContent),
+        vat: vat ? money($('vat-amount').textContent) : null,
+        vatPct: '22%',
+        commission: comm ? money($('commission-amount').textContent) : null,
+        commissionPct: comm ? (($('commission-pct') || {}).value || '0') + '%' : null,
+        gross: money((vat || comm ? $('vat-gross') : $('vat-net')).textContent)
+    };
 
     const vsel = $('vertical');
     const vertical = vsel && vsel.value && vsel.value !== 'other' ? vsel.options[vsel.selectedIndex].text : '';
     const client = (($('client') || {}).value || '').trim();
-    const appName = (opts.appName || client || '').trim();
+    const period = (($('period') || {}).value || (useful[0] ? useful[0][pos('period')] : '') || '').trim();
     return {
+        model: isCpa ? 'CPA' : 'CPI',
         client,
-        appName,
-        appIcon: opts.appIcon || null,
-        coverTitle: opts.coverTitle || ['Медиаплан', 'интернет-размещения'],
-        coverPills: [{ text: 'Период: ' + per.label }].concat(vertical ? [{ text: vertical }] : []),
-        planPills: [{ text: appName }].concat(vertical ? [{ text: vertical }] : []).filter(p => p.text),
-        headline,
+        clientLogo: opts.clientLogo || opts.appIcon || null,
+        year: opts.year || new Date().getFullYear(),
+        coverTitle: opts.coverTitle || null,
+        coverPills: [{ text: 'Период: ' + periodRu(period) }].concat(vertical ? [{ text: vertical }] : []),
+        sources: Array.from(new Set(chans)),
+        info: [
+            { label: 'Client', value: client || '—' },
+            { label: 'Campaign / Agency', value: (($('campaign') || {}).value || '').trim() || 'MobX Agency' },
+            { label: 'Document', value: 'Internet placement proposal' },
+            { label: 'Period', value: period || '—' }
+        ].concat(vertical ? [{ label: 'Vertical', value: vertical }] : []),
         plan: { buy, funnel, funnelLabelled },
         summary,
-        emails: (opts.emails && opts.emails.length) ? opts.emails : ['go@mobx.agency'],
         _rowCount: useful.length
     };
 }
@@ -243,9 +198,8 @@ function fileName() {
     return 'MobX_' + (c || 'Client') + '_Media_Plan';
 }
 async function openPreview() {
-    const emails = (($('deck-emails') || {}).value || '').split(/[\s,;]+/).filter(s => /@/.test(s));
-    const appIcon = window.GravilsDeckUI && window.GravilsDeckUI.getLogo ? window.GravilsDeckUI.getLogo() : null;
-    const data = collect({ emails, appIcon });
+    const clientLogo = window.GravilsDeckUI && window.GravilsDeckUI.getLogo ? window.GravilsDeckUI.getLogo() : null;
+    const data = collect({ clientLogo });
     if (!data._rowCount) { alert('Add at least one source with a budget to the media plan first.'); return; }
     const modal = $('deck-modal'), frame = $('deck-frame'), status = $('deck-status');
     modal.style.display = 'flex';
@@ -268,7 +222,7 @@ async function openPreview() {
     frame.style.transform = `scale(${k})`;
     $('deck-sizer').style.height = (parseFloat(frame.style.height) * k) + 'px';
     $('deck-sizer').style.width = (window.MobXDeck.SLIDE_W * k) + 'px';
-    const layoutName = { both: 'tables on one slide', split: 'buy and funnel on separate slides', buyonly: 'single table' }[report.layout] || report.layout;
+    const layoutName = { side: 'tables side by side', split: 'tables on separate slides', single: 'single table' }[report.layout] || report.layout;
     let msg = `${report.slides} slides · ${layoutName} · table text ${Math.round(report.fontPx)}px`;
     if (!report.readable) msg += ' · ⚠ the table is very large, text is below the comfortable size';
     if (report.overflow.length) msg += ' · ⚠ ' + report.overflow.join('; ');
@@ -276,5 +230,5 @@ async function openPreview() {
     $('deck-print').disabled = false;
 }
 
-window.MobXDeckUI = { collect, openPreview, periodRu, plural, fmt };
+window.MobXDeckUI = { collect, openPreview, periodRu, fmt };
 })();

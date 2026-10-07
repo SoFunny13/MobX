@@ -1,42 +1,46 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   MobX presentation generator
+   MobX presentation generator (template: Metro media plan, 07.10.2026)
    ───────────────────────────────────────────────────────────────────────────
-   Same idea as deck.js (Gravils): takes a finished media plan (values exactly
-   as shown in the plan, no recalculation) and lays it out on 1920×1080 slides
-     cover → media-plan slide(s) → contacts
-   in the MobX style (light background, blue #0000E1, Golos Text, Russian).
-   Tables are auto-fitted: every table size derives from one variable (--fs,
-   cell text size); the planner tries one slide with both tables, the buy and
-   funnel tables on separate slides, and row pagination, and keeps the option
-   with the fewest slides whose text stays readable, then the largest text.
-   All colours are opaque (no transparency in the PDF), like deck.js v1.1.
+   Takes a finished media plan (values exactly as shown in the plan, no
+   recalculation) and lays it out on 1920×1080 slides in the MobX style:
+     cover (blue) → media-plan slide(s) → closing slide (black)
+   The plan slide repeats the Excel: info row (Client / Campaign / Document /
+   Period / Vertical), "(01) Размещение и бюджет" and "(02) Прогнозные
+   показатели" side by side, and the budget cards "net + VAT = gross".
+   Tables are auto-fitted: every table size derives from one scale (--k, 1 =
+   reference size); the planner tries both tables on one slide, the tables on
+   separate slides, and row pagination, and keeps the option with the fewest
+   slides whose text stays readable, then the largest text.
+   All colours are opaque (no transparency in the PDF).
 
    Public API (window.MobXDeck):
      render(doc, data) → Promise<report>
      deckCss()         → string
-     SLIDE_W, SLIDE_H, FS_MIN, FS_MAX
+     SLIDE_W, SLIDE_H, K_MIN
    data: see deck-mobx-ui.js (collect()).
    ═══════════════════════════════════════════════════════════════════════════ */
 (function () {
 'use strict';
 
 const SLIDE_W = 1920, SLIDE_H = 1080;
-const BLUE = '#0000E1', BG = '#F8F8F8';
-const GRAY_TAG = '#959595';     // black 40% over #F8F8F8 (tagline)
-const GRAY_LABEL = '#474747';   // black 72% over white (summary labels)
-const LINE_SOFT = '#DBDBDB';    // black 14% over white (dashed lines, separator)
-const FS_MAX = 30;              // table text at reference size
-const FS_MIN = 18;              // smallest comfortable table text, px
-const FS_FLOOR = 9;             // search floor (only to rank options that don't fit)
-const ROW_FACTORS = [2.67, 2.3, 2.0];   // row height = factor × text size (reference 80px / 30px)
+const BLUE = '#0000E1', BG = '#F8F8F8', INK = '#000000';
+const GRAY40 = '#959595';       // black 40% over #F8F8F8 (tagline, labels, + / =)
+const GRAY56 = '#707070';       // black 56% over white (budget card labels)
+const LINE = '#E4E4E4';         // light separators
+const SLASH = '#999999';        // "/" in the unit price, black 40% over white
+const ON_BLUE = '#C6C6F3';      // #F8F8F8 80% over blue (gross card label)
+const ON_BLACK = '#AEAEAE';     // #F8F8F8 70% over black (closing footer)
+const K_MIN = 0.74;             // smallest comfortable table scale (≈14px text)
+const K_FLOOR = 0.45;
 const MAX_SLIDES = 10;
-const TABLE_X = 80, TABLE_W = 1760, TABLE_TOP = 366, TABLE_BOTTOM = 872;
+const CARD_TOP = 410;           // top of the table cards
+const SUM_H = 142, SUM_GAP = 22, SLIDE_BOTTOM = 1030;
 
 const A = () => window.MOBX_DECK_ASSETS || {};
 
-// Golos Text: ascent 0.98, descent 0.22 (em). With line-height = font-size the
-// baseline sits 0.88·fs below the top of the line box.
-const topFor = (baseline, fs) => baseline - 0.88 * fs;
+// Golos Text: ascent 0.98, descent 0.22 em → in a line box of height L the
+// baseline sits L/2 + 0.38·fs below its top.
+const topFor = (baseline, fs, lh) => baseline - (lh || fs) / 2 - 0.38 * fs;
 
 // ── Styles ─────────────────────────────────────────────────────────────────
 function deckCss() {
@@ -45,40 +49,53 @@ function deckCss() {
 @page{size:${SLIDE_W}px ${SLIDE_H}px;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:#d9d9d9}
-body{font-family:"Golos Text",Arial,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-font-smoothing:antialiased}
+body{font-family:"Golos Text",Arial,sans-serif;color:${INK};-webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-font-smoothing:antialiased}
 .slide{position:relative;width:${SLIDE_W}px;height:${SLIDE_H}px;overflow:hidden;background:${BG};margin:0 auto 40px}
 .slide.measure{position:absolute;left:-99999px;top:0;margin:0}
 @media print{html,body{background:${BG}}.slide{margin:0;break-after:page;page-break-after:always}.slide:last-child{break-after:auto;page-break-after:auto}}
-.bg{position:absolute;left:0;top:0;width:${SLIDE_W}px;height:${SLIDE_H}px}
 .abs{position:absolute}
 .nw{white-space:nowrap}
 .m{font-weight:500}
-.b{color:${BLUE}}
-.pills{display:flex}
-.pill{display:flex;align-items:center;white-space:nowrap;border-radius:999px;line-height:1}
-.pill.o{border:2px solid ${BLUE};color:${BLUE}}
-.pill.f{background:${BLUE};color:${BG}}
-a.pill{text-decoration:none}
+.svgbox svg{display:block;width:100%;height:100%}
+.pill{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;line-height:1;border:2px solid currentColor}
 
-/* plan card: opaque layered shadow (no transparency) */
-.card,.shade{position:absolute;border-radius:24px}
-.card{background:#fff}
+/* plan slide */
+.info{display:flex;gap:64px}
+.info .l{font-size:16px;line-height:16px;color:${GRAY40};white-space:nowrap;margin-bottom:13.6px}
+.info .v{font-size:21px;line-height:21px;white-space:nowrap}
+.sec{display:flex;align-items:baseline;gap:14px;white-space:nowrap;line-height:20px}
+.sec .n{font-size:18px;font-weight:500;color:${BLUE}}
+.sec .t{font-size:20px;font-weight:500;letter-spacing:-0.01em}
+.card{position:absolute;background:#fff;border-radius:24px;padding:18px 20px}
+.shade{position:absolute}
 
-/* tables */
-.region{position:absolute;left:${TABLE_X}px;width:${TABLE_W}px;top:${TABLE_TOP}px;overflow:hidden;--fs:30px;--rf:2.67;display:flex;flex-direction:column;gap:calc(var(--fs)*1.2667)}
-.t .grid{display:grid;column-gap:16px}
-.t .hd{height:calc(var(--fs)*2)}
-.t .hd > div{display:flex;align-items:center;justify-content:center;text-align:center;border-radius:999px;font-weight:500;font-size:calc(var(--fs)*.8);line-height:1.05;overflow:hidden;padding:0 10px}
-.t .hd.f > div{background:${BLUE};color:${BG}}
-.t .hd.o > div{border:2px solid ${BLUE};color:${BLUE}}
-.t .dash{border-top:2px dashed ${LINE_SOFT}}
-.t .hd + .dash{margin-top:calc(var(--fs)/3)}
-.t .solid{border-top:2px solid #000}
-.t .row{height:calc(var(--fs)*var(--rf))}
-.t .row > div{display:flex;align-items:center;justify-content:center;font-size:var(--fs);line-height:1;white-space:nowrap;overflow:hidden;min-width:0}
-.t .row > div.lead{font-weight:500}
-.t .row.tot > div{font-weight:500;color:${BLUE}}
-.t .row.tot > div.lead{color:#000}
+table.mt{--k:1;width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
+.mt th{height:calc(54px*var(--k));background:${BLUE};color:${BG};font-weight:500;font-size:calc(var(--hf)*var(--k));line-height:1.06;text-align:center;padding:0 calc(var(--df)*0.75*var(--k));vertical-align:middle}
+.mt.k th{background:${INK}}
+.mt th:first-child{border-radius:calc(27px*var(--k)) 0 0 calc(27px*var(--k))}
+.mt th:last-child{border-radius:0 calc(27px*var(--k)) calc(27px*var(--k)) 0}
+.mt td{height:calc(52px*var(--k));font-size:calc(var(--df)*var(--k));line-height:1;text-align:center;white-space:nowrap;padding:0 calc(var(--df)*0.75*var(--k));border-bottom:2px solid ${LINE};vertical-align:middle}
+.mt th:first-child,.mt td:first-child{padding-left:calc(24px*var(--k))}
+.mt tr.gb td{border-bottom-color:${INK}}
+.mt tr.last td{border-bottom-color:transparent}
+.mt.lead th:first-child,.mt.lead td:first-child{text-align:left}
+.mt.lead tbody tr:not(.tot) td:first-child{font-weight:500}
+.mt tr.tot td{height:calc(54px*var(--k));font-weight:500;color:${BLUE};border-top:2px solid ${BLUE};border-bottom:2px solid ${BLUE}}
+.mt.k tr.tot td{color:${INK};border-color:${INK}}
+.mt tr.tot td:first-child{border-left:2px solid ${BLUE};border-radius:calc(27px*var(--k)) 0 0 calc(27px*var(--k))}
+.mt tr.tot td:last-child{border-right:2px solid ${BLUE};border-radius:0 calc(27px*var(--k)) calc(27px*var(--k)) 0}
+.mt.k tr.tot td:first-child,.mt.k tr.tot td:last-child{border-color:${INK}}
+.mt.lead tr.tot td:first-child{padding-left:calc(22px*var(--k))}
+.mt .sl{color:${SLASH};margin:0 calc(8px*var(--k))}
+
+/* budget cards */
+.sum{display:flex;align-items:flex-start;gap:20px}
+.sum .c{position:relative;height:${SUM_H}px;border-radius:24px;background:#fff;padding:0 36px;white-space:nowrap}
+.sum .c.g{background:${BLUE};color:${BG};padding:0 43px}
+.sum .vv{letter-spacing:-0.025em}
+.sum .gv{letter-spacing:-0.03em}
+.sum .pct{position:absolute;top:30px;height:30px;padding:0 12px 4px;font-size:16px;font-weight:500;color:${BLUE}}
+.sum .op{font-size:40px;line-height:40px;font-weight:500;color:${GRAY40};width:22px;text-align:center;margin-top:${topFor(974, 40) - 888}px}
 `;
 }
 
@@ -98,7 +115,7 @@ function h(doc, tag, attrs, html) {
     return el;
 }
 function searchMax(lo, hi, fits, step) {
-    step = step || 0.25;
+    step = step || 0.01;
     if (!fits(lo)) return { value: lo, fits: false };
     if (fits(hi)) return { value: hi, fits: true };
     let a = lo, b = hi;
@@ -116,237 +133,282 @@ function waitImages(root) {
 }
 /** Text placed by its first baseline (reference coordinates). */
 function textAt(doc, html, o) {
-    const st = [`font-size:${o.fs}px`, `line-height:${o.lh || o.fs}px`, `font-weight:${o.w || 400}`];
     const lh = o.lh || o.fs;
-    st.push(`top:${(o.baseline - lh / 2 - 0.38 * o.fs).toFixed(2)}px`);
+    const st = [`font-size:${o.fs}px`, `line-height:${lh}px`, `font-weight:${o.w || 400}`, `top:${topFor(o.baseline, o.fs, lh).toFixed(2)}px`];
     if (o.left != null) st.push(`left:${o.left}px`);
     if (o.right != null) st.push(`right:${o.right}px;text-align:right`);
     if (o.color) st.push(`color:${o.color}`);
     return h(doc, 'div', { class: 'abs nw', style: st.join(';') }, html);
 }
-/** Pill row; o = {fs, height, padX, gap, kind:'o'|'f', lift (px the text sits above centre)} */
-function pills(doc, items, o) {
-    const row = h(doc, 'div', { class: 'pills abs', style: `gap:${o.gap}px` });
-    items.forEach(it => {
-        const tag = it.href ? 'a' : 'div';
-        const attrs = { class: 'pill ' + o.kind, style: `height:${o.height}px;padding:0 ${o.padX}px ${2 * (o.lift || 0)}px;font-size:${o.fs}px` };
-        if (it.href) attrs.href = it.href;
-        row.appendChild(h(doc, tag, attrs, esc(it.text)));
-    });
-    return row;
+function svgBox(doc, svg, style) {
+    return h(doc, 'div', { class: 'abs svgbox', style }, svg || '');
 }
-function logo(doc, style) {
-    const a = A();
-    const box = h(doc, 'div', { class: 'abs', style }, a.logoSvg || '');
-    const svg = box.querySelector('svg');
-    if (svg) { svg.style.width = '100%'; svg.style.height = '100%'; svg.style.display = 'block'; }
-    return box;
+/** Opaque layered shadow under a card (pre-blended over #F8F8F8), as in the reference. */
+function shadow(doc, x, y, w, hgt, r) {
+    const frag = doc.createDocumentFragment();
+    [[20, '#F7F7F7'], [16, '#F6F6F6'], [12, '#F5F5F5'], [8, '#F2F2F2'], [4, '#EFEFEF']].forEach(([o, c]) =>
+        frag.appendChild(h(doc, 'div', { class: 'shade', style: `left:${x - o}px;top:${y + 6 - o}px;width:${w + 2 * o}px;height:${hgt + 2 * o}px;background:${c};border-radius:${r + o}px` })));
+    return frag;
 }
 
-// ── Cover ──────────────────────────────────────────────────────────────────
+// ── Cover (blue) and closing (black) share the art ─────────────────────────
+function brandFrame(doc, s, bandColor) {
+    const a = A();
+    s.appendChild(svgBox(doc, a.artSvg, 'left:0;top:0;width:1920px;height:1080px'));
+    s.appendChild(h(doc, 'div', { class: 'abs', style: `left:0;top:226px;width:757px;height:80px;background:${bandColor}` }));
+    const b = a.logoBigBox || [40, 40, 422, 116];
+    s.appendChild(svgBox(doc, a.logoBigSvg, `left:${b[0]}px;top:${b[1]}px;width:${b[2]}px;height:${b[3]}px`));
+}
+function footer(doc, data, color) {
+    return textAt(doc, esc('Агентство мобильного маркетинга · ' + (data.year || new Date().getFullYear())), { fs: 22, baseline: 1022, left: 40, color });
+}
+
 function buildCover(doc, data) {
-    const a = A();
-    const s = h(doc, 'section', { class: 'slide', 'data-kind': 'cover' });
-    s.appendChild(h(doc, 'img', { class: 'bg', src: a.bgCover, alt: '' }));
+    const s = h(doc, 'section', { class: 'slide', 'data-kind': 'cover', style: `background:${BLUE};color:${BG}` });
+    brandFrame(doc, s, '#FFFFFF');
 
-    const lines = (data.coverTitle && data.coverTitle.length ? data.coverTitle : ['Медиаплан', 'интернет-размещения']);
-    const title = textAt(doc, lines.map(esc).join('<br>'), { fs: 110, lh: 104, w: 500, baseline: 232, left: 50 });
-    s.appendChild(title);
-
-    const coverPills = pills(doc, data.coverPills || [], { fs: 32, height: 54, padX: 32, gap: 22, kind: 'o', lift: 1 });
-    coverPills.style.left = '50px';
-    coverPills.style.top = '390px';
-    s.appendChild(coverPills);
-
-    // app block, centred in the white field of the background (996..1845 × 744..1000)
-    const app = h(doc, 'div', { class: 'abs', style: 'left:996px;top:744px;width:849px;height:256px;display:flex;align-items:center;justify-content:center;gap:32px;padding:0 36px' });
-    if (data.appIcon) app.appendChild(h(doc, 'img', { src: data.appIcon, alt: '', style: 'width:140px;height:140px;border-radius:32px;object-fit:cover;flex-shrink:0;display:block' }));
-    const name = h(doc, 'div', { class: 'm', style: 'font-size:52px;line-height:54px;min-width:0' }, '');
-    app.appendChild(name);
-    s.appendChild(app);
-
-    s._fit = () => {
-        // title: shrink only if a custom line is too long for the left column
-        searchMax(64, 110, v => {
-            title.style.fontSize = v + 'px';
-            title.style.lineHeight = (v * 104 / 110) + 'px';
-            title.style.top = (232 - (v * 104 / 110) / 2 - 0.38 * v) + 'px';
-            return title.offsetWidth <= 1250;
-        }, 1);
-        // app name: one line if it fits, otherwise two balanced lines, then shrink
-        const maxW = 849 - 72 - (data.appIcon ? 172 : 0);
-        const text = String(data.appName || data.client || '').trim();
-        const fitsAt = (html, v) => {
-            name.innerHTML = html;
-            name.style.fontSize = v + 'px';
-            name.style.lineHeight = (v * 54 / 52) + 'px';
-            name.style.whiteSpace = 'nowrap';
-            return name.scrollWidth <= maxW;
-        };
-        let html = esc(text);
-        if (!fitsAt(html, 52)) {
-            const two = splitTwo(text);
-            html = two ? esc(two[0]) + '<br>' + esc(two[1]) : esc(text);
-        }
-        searchMax(28, 52, v => fitsAt(html, v), 0.5);
-    };
-    return s;
-}
-/** Split a name into two balanced lines, preferring a break after ':' or '—'. */
-function splitTwo(text) {
-    const words = text.split(/\s+/);
-    if (words.length < 2) return null;
-    let best = null;
-    for (let i = 1; i < words.length; i++) {
-        const a = words.slice(0, i).join(' '), b = words.slice(i).join(' ');
-        let score = Math.max(a.length, b.length);
-        if (/[:—–-]$/.test(a)) score -= 4;
-        if (!best || score < best.score) best = { a, b, score };
+    let nameBox = null;
+    if (data.clientLogo) {
+        const logoBox = h(doc, 'div', { class: 'abs', style: 'left:40px;top:490px;height:96px;max-width:620px;display:flex' });
+        logoBox.appendChild(h(doc, 'img', { src: data.clientLogo, alt: '', style: 'height:96px;width:auto;max-width:620px;object-fit:contain;border-radius:8px;display:block' }));
+        s.appendChild(logoBox);
+    } else if (data.client) {
+        // no logo: the client name in its place
+        nameBox = textAt(doc, esc(data.client), { fs: 44, baseline: 560, left: 40, w: 500, color: BG });
+        s.appendChild(nameBox);
     }
-    return [best.a, best.b];
-}
-
-// ── Contacts ───────────────────────────────────────────────────────────────
-function buildContacts(doc, data) {
-    const a = A();
-    const s = h(doc, 'section', { class: 'slide', 'data-kind': 'contacts' });
-    s.appendChild(h(doc, 'img', { class: 'bg', src: a.bgContacts, alt: '' }));
-    const title = textAt(doc, 'Напишите нам', { fs: 255, w: 500, baseline: 342, left: 40 });
+    const lines = (data.coverTitle && data.coverTitle.length ? data.coverTitle : ['Медиаплан', 'интернет‑размещения']);
+    const title = textAt(doc, lines.map(esc).join('<br>'), { fs: 64, lh: 68, w: 500, baseline: 698, left: 40, color: BG });
+    title.style.letterSpacing = '-0.03em';
     s.appendChild(title);
-    const items = [{ text: 'Web-site', href: 'https://mobx.agency/' }];
-    (data.emails && data.emails.length ? data.emails : ['go@mobx.agency'])
-        .forEach(e => items.push({ text: 'Почта: ' + e, href: 'mailto:' + e }));
-    const row = pills(doc, items, { fs: 42, height: 82, padX: 42, gap: 40, kind: 'f', lift: 3 });
-    row.style.left = '40px';
-    row.style.top = '418px';
-    row.style.flexWrap = 'wrap';
-    row.style.maxWidth = '1840px';
-    row.style.rowGap = '20px';
-    s.appendChild(row);
-    s.appendChild(textAt(doc, 'Мы в соцсетях', { fs: 44, baseline: 807, left: 42 }));
+
+    const pills = h(doc, 'div', { class: 'abs', style: 'left:40px;top:818px;display:flex;flex-direction:column;align-items:flex-start;gap:16px' });
+    (data.coverPills || []).forEach(p => pills.appendChild(h(doc, 'div', { class: 'pill', style: `height:58px;padding:0 30px;font-size:26px;color:${BG}` }, esc(p.text))));
+    s.appendChild(pills);
+    s.appendChild(footer(doc, data, BG));
+
     s._fit = () => {
-        // many e-mails: shrink the pills until they stay above the social block (y ≈ 740)
-        searchMax(24, 42, v => {
-            row.querySelectorAll('.pill').forEach(p => {
-                p.style.fontSize = v + 'px';
-                p.style.height = Math.round(v * 82 / 42) + 'px';
-                p.style.padding = '0 ' + Math.round(v) + 'px ' + Math.round(v / 7) + 'px';
-            });
-            return row.offsetTop + row.offsetHeight <= 720;
+        if (nameBox) searchMax(24, 44, v => {
+            nameBox.style.fontSize = v + 'px'; nameBox.style.lineHeight = v + 'px';
+            nameBox.style.top = topFor(560, v) + 'px';
+            return nameBox.offsetWidth <= 700;
+        }, 0.5);
+        searchMax(40, 64, v => {
+            title.style.fontSize = v + 'px'; title.style.lineHeight = (v * 68 / 64) + 'px';
+            title.style.top = topFor(698, v, v * 68 / 64) + 'px';
+            return title.offsetWidth <= 717;
         }, 0.5);
     };
     return s;
 }
 
-// ── Media-plan slide ───────────────────────────────────────────────────────
-/** group = { kind:'f'|'o', cols:[label], rows:[[cell]], total:[cell]|null, lead:bool } */
-function buildTable(doc, group, withTotal) {
-    const n = group.gridN || group.cols.length;   // tables on one slide share one column grid
-    const span = j => (group.spans && group.spans[j] > 1 ? `grid-column:span ${group.spans[j]}` : null);
-    const cellAttrs = (j, extra) => {
-        const a = {};
-        if (extra) a.class = extra;
-        const sp = span(j);
-        if (sp) a.style = sp;
-        return a;
-    };
-    const t = h(doc, 'div', { class: 't' });
-    const tpl = `repeat(${n},minmax(0,1fr));column-gap:${n >= 10 ? 10 : 16}px`;
-    const hd = h(doc, 'div', { class: 'grid hd ' + group.kind, style: 'grid-template-columns:' + tpl });
-    group.cols.forEach((c, j) => hd.appendChild(h(doc, 'div', cellAttrs(j), esc(c))));
-    t.appendChild(hd);
-    t.appendChild(h(doc, 'div', { class: 'dash' }));
-    group.rows.forEach((r, i) => {
-        if (i > 0) t.appendChild(h(doc, 'div', { class: 'dash' }));
-        const row = h(doc, 'div', { class: 'grid row', style: 'grid-template-columns:' + tpl });
-        r.forEach((v, j) => row.appendChild(h(doc, 'div', cellAttrs(j, j === 0 && group.lead ? 'lead' : null), esc(v))));
-        t.appendChild(row);
-    });
-    if (withTotal && group.total) {
-        t.appendChild(h(doc, 'div', { class: 'solid' }));
-        const row = h(doc, 'div', { class: 'grid row tot', style: 'grid-template-columns:' + tpl });
-        group.total.forEach((v, j) => row.appendChild(h(doc, 'div', cellAttrs(j, j === 0 && group.lead ? 'lead' : null), esc(v))));
-        t.appendChild(row);
-    }
-    return t;
-}
-
-function headlineHtml(data) {
-    const k = data.headline || {};
-    const num = v => `<span class="b">${esc(v)}</span>`;
-    const l1 = `${esc(k.prefix || 'Медиаплан:')} ${num(k.n1)} ${esc(k.w1)}`;
-    const l2 = k.n2 != null ? `и ${num(k.n2)} ${esc(k.w2)}${k.period ? ' ' + esc(k.period) : ''}` : esc(k.period || '');
-    return l2 ? l1 + '<br>' + l2 : l1;
-}
-
-function buildPlanSlide(doc, data, spec) {
-    const s = h(doc, 'section', { class: 'slide', 'data-kind': 'plan' });
-    s.appendChild(logo(doc, 'left:40px;top:50px;width:151.9px;height:41.8px'));
-    s.appendChild(textAt(doc, 'Агентство мобильного маркетинга', { fs: 24, baseline: 76, right: 40, color: GRAY_TAG }));
-
-    const head = textAt(doc, headlineHtml(data), { fs: 72, lh: 74, w: 500, baseline: 200, left: 40 });
-    s.appendChild(head);
-    const pr = pills(doc, data.planPills || [], { fs: 26, height: 58, padX: 31, gap: 16, kind: 'o' });
-    pr.style.right = '40px';
-    pr.style.top = '228px';
-    s.appendChild(pr);
-
-    // card with an opaque layered shadow (pre-blended over #F8F8F8)
-    [[20, '#F7F7F7'], [16, '#F6F6F6'], [12, '#F5F5F5'], [8, '#F2F2F2'], [4, '#EFEFEF']].forEach(([o, c]) =>
-        s.appendChild(h(doc, 'div', { class: 'shade', style: `left:${40 - o}px;top:${330 - o + 2}px;width:${1840 + 2 * o}px;height:${700 + 2 * o}px;background:${c};border-radius:${24 + o}px` })));
-    s.appendChild(h(doc, 'div', { class: 'card', style: 'left:40px;top:330px;width:1840px;height:700px' }));
-
-    const region = h(doc, 'div', { class: 'region', style: `height:${TABLE_BOTTOM - TABLE_TOP}px` });
-    spec.groups.forEach(g => region.appendChild(buildTable(doc, g, spec.withTotal)));
-    s.appendChild(region);
-
-    // separator + budget summary (bottom of the card)
-    if (spec.isLast) {
-        s.appendChild(h(doc, 'div', { class: 'abs', style: `left:${TABLE_X}px;top:910px;width:${TABLE_W}px;border-top:2px solid ${LINE_SOFT}` }));
-        const sum = data.summary || [];
-        const box = h(doc, 'div', { class: 'abs nw', style: `right:${SLIDE_W - TABLE_X - TABLE_W}px;top:${topFor(992, 64)}px;display:flex;align-items:baseline;gap:32px` });
-        sum.forEach((it, i) => {
-            const last = i === sum.length - 1;
-            box.appendChild(h(doc, 'div', { style: `font-size:30px;line-height:64px;color:${GRAY_LABEL};position:relative;top:-12px` }, esc(it.label)));
-            box.appendChild(h(doc, 'div', { class: 'm', style: last ? `font-size:64px;line-height:64px;color:${BLUE}` : 'font-size:30px;line-height:64px;color:#000;position:relative;top:-12px;margin-right:24px' }, esc(it.value)));
-        });
-        s.appendChild(box);
-    }
-    s._region = region;
-    s._head = head;
-    s._pills = pr;
+function buildClosing(doc, data) {
+    const s = h(doc, 'section', { class: 'slide', 'data-kind': 'closing', style: `background:#000;color:${BG}` });
+    brandFrame(doc, s, BLUE);
+    const t = textAt(doc, `Создавать<br><span style="color:${BLUE}">вместе</span> проекты,<br>меняющие рынок`,
+        { fs: 70, lh: 77, w: 500, baseline: 790, left: 40, color: BG });
+    t.style.letterSpacing = '-0.02em';
+    s.appendChild(t);
+    s.appendChild(footer(doc, data, ON_BLACK));
+    s._fit = () => {};
     return s;
 }
 
-/** Headline and pills share the top band: shrink the headline if they would touch. */
-function settleChrome(s) {
-    const pillsLeft = SLIDE_W - 40 - s._pills.offsetWidth;
-    searchMax(48, 72, v => {
-        s._head.style.fontSize = v + 'px';
-        s._head.style.lineHeight = (v * 74 / 72) + 'px';
-        // keep the second baseline at y 274
-        s._head.style.top = (274 - (v * 74 / 72) * 1.5 - 0.38 * v) + 'px';
-        return 40 + s._head.offsetWidth <= pillsLeft - 40;
-    }, 0.5);
+// ── Media-plan slide ───────────────────────────────────────────────────────
+/** cell: string, or {v, unit:true} for "price / 1" */
+function cellHtml(c) {
+    if (c && typeof c === 'object') return esc(c.v) + (c.unit ? '<span class="sl">/</span>1' : '');
+    return esc(c);
+}
+/** group = { kind:'b'|'k', lead, cols:[label], rows:[[cell]], gb:[bool], total:[cell]|null } */
+function buildTable(doc, g, withTotal, hf, df) {
+    const t = h(doc, 'table', { class: 'mt' + (g.kind === 'k' ? ' k' : '') + (g.lead ? ' lead' : ''), style: `--hf:${hf}px;--df:${df}px` });
+    const thead = h(doc, 'thead'), trh = h(doc, 'tr');
+    g.cols.forEach(c => trh.appendChild(h(doc, 'th', null, esc(c))));
+    thead.appendChild(trh);
+    t.appendChild(thead);
+    const tb = h(doc, 'tbody');
+    g.rows.forEach((r, i) => {
+        const last = i === g.rows.length - 1;
+        const tr = h(doc, 'tr', (last || g.gb[i]) ? { class: last ? 'last' : 'gb' } : null);
+        r.forEach(v => tr.appendChild(h(doc, 'td', null, cellHtml(v))));
+        tb.appendChild(tr);
+    });
+    if (withTotal && g.total) {
+        const tr = h(doc, 'tr', { class: 'tot' });
+        g.total.forEach(v => tr.appendChild(h(doc, 'td', null, cellHtml(v))));
+        tb.appendChild(tr);
+    }
+    t.appendChild(tb);
+    return t;
 }
 
-/** For every row factor: the largest --fs at which every table fits the region. */
-function fitRegion(s) {
-    const region = s._region;
-    const cells = Array.from(region.querySelectorAll('.hd > div, .row > div'));
-    const fitsAt = (v, rf) => {
-        region.style.setProperty('--fs', v + 'px');
-        region.style.setProperty('--rf', rf);
-        if (region.scrollHeight > region.clientHeight + 0.5) return false;
-        return cells.every(c => c.scrollWidth <= c.clientWidth + 0.5 && c.scrollHeight <= c.clientHeight + 0.5);
+function buildSummary(doc, data) {
+    const sum = data.summary || {};
+    const box = h(doc, 'div', { class: 'sum abs', style: 'left:40px' });
+    const plain = (label, value, pill) => {
+        const c = h(doc, 'div', { class: 'c' });
+        const l = textAt(doc, esc(label), { fs: 18, baseline: 52, left: 36, color: GRAY56 });
+        c.appendChild(l);
+        if (pill) { const pc = h(doc, 'div', { class: 'pill pct' }, esc(pill)); c.appendChild(pc); c._pill = [l, pc]; }
+        const v = textAt(doc, esc(value), { fs: 44, w: 500, baseline: pill ? 106 : 104, left: 36 });
+        v.classList.add('vv');
+        c.appendChild(v);
+        return c;
     };
-    return ROW_FACTORS.map(rf => searchMax(FS_FLOOR, FS_MAX, v => fitsAt(v, rf), 0.25).value);
+    const op = ch => h(doc, 'div', { class: 'op' }, ch);
+    const cards = [];
+    const add = c => { cards.push(c); box.appendChild(c); };
+    // net (+ commission) (+ VAT) = gross; without VAT simply net = gross, as in the Excel
+    add(plain('Max placement cost net', sum.net));
+    if (sum.commission) { box.appendChild(op('+')); add(plain('Commission', sum.commission, sum.commissionPct)); }
+    if (sum.vat) { box.appendChild(op('+')); add(plain('VAT', sum.vat, sum.vatPct || '22%')); }
+    box.appendChild(op('='));
+    const g = h(doc, 'div', { class: 'c g' });
+    g.appendChild(textAt(doc, esc('Total cost gross · ' + (data.model || '')), { fs: 18, baseline: 46, left: 43, color: ON_BLUE }));
+    const gv = textAt(doc, esc(sum.gross), { fs: 56, w: 500, baseline: 108, left: 43, color: BG });
+    gv.classList.add('gv');
+    g.appendChild(gv);
+    add(g);
+    box._cards = cards;
+    return box;
 }
-/** One row factor for the whole deck: prefer the airier one unless a denser one gains more than 1px. */
-function pickRow(perRf) {
-    let best = null;
-    perRf.forEach((fs, i) => { if (!best || fs > best.fs + 1) best = { fs, rf: ROW_FACTORS[i] }; });
-    return best;
+/** Budget cards: width follows the content (text is absolutely placed inside). */
+function settleSummary(box) {
+    box._cards.forEach(c => {
+        if (c._pill) c._pill[1].style.left = (36 + c._pill[0].offsetWidth + 12) + 'px';   // "VAT  (22%)"
+        const pad = c.classList.contains('g') ? 43 : 36;
+        const w = Math.max(...Array.from(c.children).map(ch => ch.offsetLeft - pad + ch.offsetWidth));
+        c.style.width = Math.ceil(w + 2 * pad) + 'px';
+    });
+}
+
+function buildPlanSlide(doc, data, spec) {
+    const a = A();
+    const s = h(doc, 'section', { class: 'slide', 'data-kind': 'plan' });
+    const b = a.logoBox || [40, 50, 151.87, 41.83];
+    s.appendChild(svgBox(doc, a.logoSvg, `left:${b[0]}px;top:${b[1]}px;width:${b[2]}px;height:${b[3]}px`));
+    s.appendChild(textAt(doc, 'Агентство мобильного маркетинга', { fs: 18, baseline: 70, right: 40, color: GRAY40 }));
+
+    const title = textAt(doc, esc('Медиаплан: модель ' + (data.model || '')), { fs: 60, w: 500, baseline: 184, left: 40 });
+    title.style.letterSpacing = '-0.03em';
+    s.appendChild(title);
+    const pills = h(doc, 'div', { class: 'abs', style: 'top:140px;display:flex;gap:12px' });
+    (data.sources || []).forEach(t => pills.appendChild(h(doc, 'div', { class: 'pill m', style: `height:46px;padding:0 24px;font-size:22px;color:${BLUE}` }, esc(t))));
+    s.appendChild(pills);
+    let logo = null;
+    if (data.clientLogo) {
+        logo = h(doc, 'div', { class: 'abs', style: 'right:40px;top:138px;height:56px;display:flex;justify-content:flex-end' });
+        logo.appendChild(h(doc, 'img', { src: data.clientLogo, alt: '', style: 'height:56px;width:auto;max-width:300px;object-fit:contain;border-radius:6px;display:block' }));
+        s.appendChild(logo);
+    }
+    s.appendChild(h(doc, 'div', { class: 'abs', style: `left:40px;top:226px;width:1840px;height:2px;background:${LINE}` }));
+    s.appendChild(h(doc, 'div', { class: 'abs', style: `left:40px;top:328px;width:1840px;height:2px;background:${LINE}` }));
+
+    const info = h(doc, 'div', { class: 'info abs', style: `left:40px;top:${topFor(266, 16)}px` });
+    (data.info || []).forEach((it, i) => {
+        const col = h(doc, 'div');
+        col.appendChild(h(doc, 'div', { class: 'l' }, esc(it.label)));
+        col.appendChild(h(doc, 'div', { class: 'v' + (i === 0 ? ' m' : '') }, esc(it.value)));
+        info.appendChild(col);
+    });
+    s.appendChild(info);
+
+    // table cards
+    const side = spec.groups.length === 2;
+    const geo = side ? [[40, 850], [946, 934]] : [[40, 1840]];
+    const cards = [];
+    spec.groups.forEach((g, i) => {
+        const [x, w] = geo[i];
+        const sec = h(doc, 'div', { class: 'sec abs', style: `left:${x + 8}px;top:${topFor(388, 20)}px` });
+        sec.appendChild(h(doc, 'span', { class: 'n' }, g.kind === 'k' ? '(02)' : '(01)'));
+        sec.appendChild(h(doc, 'span', { class: 't' }, g.kind === 'k' ? 'Прогнозные показатели' : 'Размещение и бюджет'));
+        s.appendChild(sec);
+        const card = h(doc, 'div', { class: 'card', style: `left:${x}px;top:${CARD_TOP}px;width:${w}px` });
+        card.appendChild(buildTable(doc, g, spec.withTotal, g.kind === 'k' ? 16 : 17, g.kind === 'k' ? 18 : 19));
+        cards.push({ card, x, w });
+    });
+    const shadeHost = h(doc, 'div', { class: 'abs', style: 'left:0;top:0' });
+    s.appendChild(shadeHost);
+    cards.forEach(c => s.appendChild(c.card));
+    let divider = null;
+    if (side) {
+        divider = h(doc, 'div', { class: 'abs', style: `left:918px;top:372px;width:2px;background:${INK}` });
+        s.appendChild(divider);
+    }
+    let sum = null;
+    if (spec.isLast) {
+        sum = buildSummary(doc, data);
+        s.appendChild(sum);
+    }
+    s._title = title; s._pills = pills; s._logo = logo; s._info = info;
+    s._cards = cards; s._shadeHost = shadeHost; s._divider = divider; s._sum = sum;
+    return s;
+}
+
+/** Title row and info row: shrink when they would not fit. */
+function settleChrome(s) {
+    const titleRight = 40 + s._title.offsetWidth;
+    const limit = (s._logo ? SLIDE_W - 40 - s._logo.offsetWidth - 40 : SLIDE_W - 40);
+    s._pills.style.left = (titleRight + 30) + 'px';
+    const pills = Array.from(s._pills.children);
+    const fits = () => titleRight + 30 + s._pills.offsetWidth <= limit;
+    // too many sources: smaller pills, then the tail goes into "+N"
+    if (!fits()) searchMax(14, 22, v => {
+        pills.forEach(p => { p.style.fontSize = v + 'px'; p.style.padding = `0 ${Math.round(v * 24 / 22)}px`; });
+        return fits();
+    }, 0.5);
+    let hidden = 0;
+    while (!fits() && pills.length > 1) {
+        pills.pop().remove();
+        hidden++;
+        let more = s._pills.querySelector('.more');
+        if (!more) { more = pills[0].cloneNode(); more.classList.add('more'); s._pills.appendChild(more); }
+        more.textContent = '+' + hidden;
+    }
+    // info row wider than the slide: shrink its text
+    if (s._info.offsetWidth > 1840) searchMax(0.6, 1, v => {
+        s._info.style.gap = (64 * v) + 'px';
+        s._info.querySelectorAll('.l').forEach(e => { e.style.fontSize = 16 * v + 'px'; });
+        s._info.querySelectorAll('.v').forEach(e => { e.style.fontSize = 21 * v + 'px'; });
+        return s._info.offsetWidth <= 1840;
+    }, 0.02);
+}
+
+/** Apply table scale k; returns true when everything fits. */
+function applyScale(s, k) {
+    const bottomLimit = s._sum ? SLIDE_BOTTOM - SUM_H - SUM_GAP : SLIDE_BOTTOM;
+    let ok = true, maxBottom = CARD_TOP;
+    s._cards.forEach(({ card }) => {
+        const t = card.querySelector('table');
+        t.style.setProperty('--k', k);
+        if (t.offsetWidth > card.clientWidth - 40 + 0.5) ok = false;          // wider than the card
+        maxBottom = Math.max(maxBottom, CARD_TOP + card.offsetHeight);
+    });
+    if (maxBottom > bottomLimit + 0.5) ok = false;
+    return ok;
+}
+/** After the scale is fixed: shadows, divider, budget cards under the tables. */
+function finishPlan(s) {
+    const doc = s.ownerDocument;
+    let maxBottom = CARD_TOP;
+    s._shadeHost.innerHTML = '';
+    s._cards.forEach(({ card, x, w }) => {
+        const hgt = card.offsetHeight;
+        maxBottom = Math.max(maxBottom, CARD_TOP + hgt);
+        s._shadeHost.appendChild(shadow(doc, x, CARD_TOP, w, hgt, 24));
+    });
+    if (s._divider) s._divider.style.height = (maxBottom - 6 - 372) + 'px';
+    if (s._sum) {
+        const top = SLIDE_BOTTOM - SUM_H;          // budget cards always at the bottom, as in the reference
+        s._sum.style.top = top + 'px';
+        settleSummary(s._sum);
+        const host = h(doc, 'div', { class: 'abs', style: 'left:0;top:0' });
+        s._sum._cards.forEach(c => {
+            if (!c.classList.contains('g')) host.appendChild(shadow(doc, 40 + c.offsetLeft, top, c.offsetWidth, SUM_H, 24));
+        });
+        s.insertBefore(host, s._sum);
+    }
 }
 
 // ── Planner ────────────────────────────────────────────────────────────────
@@ -355,41 +417,42 @@ function chunkBounds(n, k) {
     for (let i = 0; i < n; i += size) out.push([i, Math.min(n, i + size)]);
     return out;
 }
-function slice(g, a, b) { return { kind: g.kind, lead: g.lead, gridN: g.gridN, spans: g.spans, cols: g.cols, rows: g.rows.slice(a, b), total: g.total }; }
-
+function slice(g, a, b) {
+    return { kind: g.kind, lead: g.lead, cols: g.cols, rows: g.rows.slice(a, b), gb: g.gb.slice(a, b), total: g.total };
+}
 function expandOption(plan, k, layout) {
     const n = plan.buy.rows.length;
     const bounds = chunkBounds(n, k);
     const specs = [];
-    if (layout === 'both') {
-        bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.buy, a, b)].concat(plan.funnel.map(f => slice(f, a, b))), withTotal: i === bounds.length - 1 }));
-    } else { // split: buy slides, then funnel slides
+    if (layout === 'side') {
+        bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.buy, a, b), slice(plan.funnel, a, b)], withTotal: i === bounds.length - 1 }));
+    } else if (layout === 'split') {
         bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.buy, a, b)], withTotal: i === bounds.length - 1 }));
-        const lf = plan.funnelLabelled || plan.funnel;   // alone on a slide: with the channel column
-        bounds.forEach(([a, b], i) => specs.push({ groups: lf.map(f => slice(f, a, b)), withTotal: i === bounds.length - 1 }));
+        bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.funnelLabelled || plan.funnel, a, b)], withTotal: i === bounds.length - 1 }));
+    } else {
+        bounds.forEach(([a, b], i) => specs.push({ groups: [slice(plan.buy, a, b)], withTotal: i === bounds.length - 1 }));
     }
     specs.forEach((sp, i) => { sp.isLast = i === specs.length - 1; });
     return specs;
 }
-
 function evaluate(doc, data, specs) {
-    const min = ROW_FACTORS.map(() => Infinity);   // per row factor: smallest fit over all slides
+    let min = Infinity;
     for (const sp of specs) {
         const s = buildPlanSlide(doc, data, sp);
         s.classList.add('measure');
         doc.body.appendChild(s);
         settleChrome(s);
-        fitRegion(s).forEach((fs, i) => { min[i] = Math.min(min[i], fs); });
+        const r = searchMax(K_FLOOR, 1, k => applyScale(s, k), 0.01);
         s.remove();
-        if (Math.max.apply(null, min) < FS_FLOOR + 0.01) break;
+        min = Math.min(min, r.value);
+        if (min < K_FLOOR + 0.005) break;
     }
-    return pickRow(min);
+    return min;
 }
-
 function planTables(doc, data) {
     const plan = data.plan;
     const n = Math.max(1, plan.buy.rows.length);
-    const layouts = plan.funnel && plan.funnel.length ? ['both', 'split'] : ['buyonly'];
+    const layouts = plan.funnel ? ['side', 'split'] : ['single'];
     const options = [];
     for (let k = 1; k <= Math.min(n, MAX_SLIDES); k++) {
         layouts.forEach((l, pref) => {
@@ -404,16 +467,13 @@ function planTables(doc, data) {
         const group = [];
         while (i < options.length && options[i].slides === count) group.push(options[i++]);
         for (const o of group) {
-            o.specs = o.layout === 'buyonly'
-                ? chunkBounds(n, o.k).map(([a, b], j, all) => ({ groups: [slice(plan.buy, a, b)], withTotal: j === all.length - 1, isLast: j === all.length - 1 }))
-                : expandOption(plan, o.k, o.layout);
-            const r = evaluate(doc, data, o.specs);
-            o.fs = r.fs; o.rf = r.rf;
-            if (!fallback || o.fs > fallback.fs + 0.01) fallback = o;
+            o.specs = expandOption(plan, o.k, o.layout);
+            o.scale = evaluate(doc, data, o.specs);
+            if (!fallback || o.scale > fallback.scale + 0.001) fallback = o;
         }
-        const ok = group.filter(o => o.fs >= FS_MIN);
+        const ok = group.filter(o => o.scale >= K_MIN);
         if (ok.length) {
-            ok.sort((p, q) => (q.fs - p.fs > 0.5 ? 1 : p.fs - q.fs > 0.5 ? -1 : p.pref - q.pref));
+            ok.sort((p, q) => (q.scale - p.scale > 0.02 ? 1 : p.scale - q.scale > 0.02 ? -1 : p.pref - q.pref));
             best = ok[0];
             break;
         }
@@ -431,46 +491,43 @@ async function render(doc, data) {
     }
     doc.body.innerHTML = '';
     const warm = h(doc, 'div', { style: 'position:absolute;left:-9999px;top:0' },
-        '<span style="font-weight:400">Аa1$₽</span><b style="font-weight:500">Аa1$₽</b>');
+        '<span style="font-weight:400">Аa1$₽·</span><b style="font-weight:500">Аa1$₽·</b>');
     doc.body.appendChild(warm);
-    try { await Promise.all([doc.fonts.load('400 20px "Golos Text"', 'Аa1$₽'), doc.fonts.load('500 20px "Golos Text"', 'Аa1$₽')]); } catch (e) { /* fall back silently */ }
+    try { await Promise.all([doc.fonts.load('400 20px "Golos Text"', 'Аa1$₽·'), doc.fonts.load('500 20px "Golos Text"', 'Аa1$₽·')]); } catch (e) { /* fall back silently */ }
     await doc.fonts.ready;
     warm.remove();
-    if (data.appIcon) {
-        const probe = h(doc, 'img', { src: data.appIcon, style: 'position:absolute;left:-9999px' });
+    if (data.clientLogo) {
+        const probe = h(doc, 'img', { src: data.clientLogo, style: 'position:absolute;left:-9999px;height:56px' });
         doc.body.appendChild(probe);
         await waitImages(doc.body);
         probe.remove();
     }
 
     const { option, readable } = planTables(doc, data);
-    const specs = option.specs;
+    const scale = Math.min(1, option.scale);
 
     const cover = buildCover(doc, data);
     doc.body.appendChild(cover);
     cover._fit();
-
-    specs.forEach(sp => {
+    option.specs.forEach(sp => {
         const s = buildPlanSlide(doc, data, sp);
         doc.body.appendChild(s);
         settleChrome(s);
-        // same text size on every plan slide
-        s._region.style.setProperty('--fs', option.fs + 'px');
-        s._region.style.setProperty('--rf', option.rf);
+        applyScale(s, scale);          // same table size on every plan slide
+        finishPlan(s);
     });
-
-    const contacts = buildContacts(doc, data);
-    doc.body.appendChild(contacts);
-    contacts._fit();
+    const closing = buildClosing(doc, data);
+    doc.body.appendChild(closing);
+    closing._fit();
 
     await waitImages(doc.body);
     return {
-        slides: specs.length + 2,
-        planSlides: specs.length,
+        slides: option.specs.length + 2,
+        planSlides: option.specs.length,
         layout: option.layout,
         rowsPerSlide: Math.ceil(Math.max(1, data.plan.buy.rows.length) / option.k),
-        fontPx: Math.round(option.fs * 100) / 100,
-        rowFactor: option.rf,
+        scale: Math.round(scale * 100) / 100,
+        fontPx: Math.round(19 * scale * 10) / 10,
         readable,
         overflow: checkOverflow(doc)
     };
@@ -478,16 +535,17 @@ async function render(doc, data) {
 
 function checkOverflow(doc) {
     const issues = [];
-    doc.querySelectorAll('section.slide').forEach((s, i) => {
-        const r = s.querySelector('.region');
-        if (!r) return;
-        if (r.scrollHeight > r.clientHeight + 1) issues.push(`slide ${i + 1}: table taller than its area`);
-        r.querySelectorAll('.hd > div, .row > div').forEach(c => {
-            if (c.scrollWidth > c.clientWidth + 1) issues.push(`slide ${i + 1}: "${c.textContent}" does not fit its cell`);
+    doc.querySelectorAll('section.slide[data-kind="plan"]').forEach((s, i) => {
+        s.querySelectorAll('.card').forEach(card => {
+            const t = card.querySelector('table');
+            if (t && t.offsetWidth > card.clientWidth - 40 + 1) issues.push(`plan slide ${i + 1}: table wider than its card`);
+            if (card.offsetTop + card.offsetHeight > SLIDE_BOTTOM + 1) issues.push(`plan slide ${i + 1}: table below the slide`);
         });
+        const sum = s.querySelector('.sum');
+        if (sum && sum.offsetTop + SUM_H > SLIDE_H) issues.push(`plan slide ${i + 1}: budget cards below the slide`);
     });
     return issues;
 }
 
-window.MobXDeck = { render, deckCss, SLIDE_W, SLIDE_H, FS_MIN, FS_MAX };
+window.MobXDeck = { render, deckCss, SLIDE_W, SLIDE_H, K_MIN };
 })();
