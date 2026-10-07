@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Media Plan Generator</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="deck-ui.css">
 </head>
 <body>
     <!-- Password Gate -->
@@ -222,13 +223,79 @@
             </div>
         </section>
 
+        <!-- Presentation (Gravils and MobX) -->
+        <section class="section deck-only" id="deck-section">
+            <h2 class="section-title">Presentation</h2>
+            <div class="deck-grid">
+                <div class="form-group gravils-only">
+                    <label for="deck-title-preset">Cover title</label>
+                    <select id="deck-title-preset">
+                        <option value="mua">Mobile user acquisition proposal</option>
+                        <option value="ipp">Internet placement proposal</option>
+                        <option value="custom">Custom…</option>
+                    </select>
+                    <textarea id="deck-title-custom" rows="2" placeholder="Line 1&#10;Line 2" style="display:none"></textarea>
+                </div>
+                <div class="form-group gravils-only" style="grid-column: span 2">
+                    <label for="deck-subtitle-preset">Cover subtitle</label>
+                    <select id="deck-subtitle-preset">
+                        <option value="perf">Performance marketing for [client]</option>
+                        <option value="perfgeo">Performance marketing for [client] — [GEO], [vertical]</option>
+                        <option value="media">[Period] of performance media for [client]</option>
+                        <option value="placement">Internet placement for [client]</option>
+                        <option value="custom">Custom text</option>
+                    </select>
+                    <input type="text" id="deck-subtitle" placeholder="Subtitle">
+                    <div class="deck-hint">Fills in from Client, Period, GEOs and Vertical. Edit freely — the client name is set in bold automatically.</div>
+                </div>
+                <div class="form-group">
+                    <label><span class="gravils-only">Client logo</span><span class="mobx-only">App icon</span></label>
+                    <div class="deck-logo-row">
+                        <div class="deck-logo-box"><img id="deck-logo-preview" alt=""><span id="deck-logo-empty">no logo</span></div>
+                        <div class="deck-logo-actions">
+                            <input type="file" id="deck-logo-file" accept="image/png,image/svg+xml,image/jpeg,image/webp">
+                            <button type="button" class="btn-sm btn-outline" id="deck-logo-clear" style="display:none">Remove</button>
+                        </div>
+                    </div>
+                    <div class="deck-hint">Light version on a transparent background (PNG or SVG). The preview shows it on the slide background.</div>
+                </div>
+                <div class="form-group">
+                    <label for="deck-emails">Contact e-mails</label>
+                    <textarea id="deck-emails" rows="3" placeholder="name@gravils.com / go@mobx.agency&#10;one per line"></textarea>
+                </div>
+                <div class="form-group gravils-only">
+                    <label>Footnotes</label>
+                    <div class="deck-checks">
+                        <label><input type="checkbox" id="deck-note-google" checked> Google Ads whitelisting (Google UAC)</label>
+                        <label><input type="checkbox" id="deck-note-tiktok"> Local license required (TikTok)</label>
+                    </div>
+                    <input type="text" id="deck-note-custom" placeholder="Custom footnote (optional)" style="margin-top:8px">
+                    <div class="deck-hint">A note is shown only if its source is in the plan.</div>
+                </div>
+            </div>
+        </section>
+
         <!-- Export Section -->
         <section class="section export-section">
             <div class="export-actions">
                 <button class="btn btn-export" id="export-btn">Download Excel</button>
+                <button class="btn btn-deck deck-only" id="deck-btn">Presentation (PDF)</button>
                 <button class="btn btn-secondary" id="reset-btn">Reset All</button>
             </div>
         </section>
+    </div>
+
+    <!-- Presentation preview (Gravils) -->
+    <div class="deck-modal" id="deck-modal">
+        <div class="deck-bar">
+            <div class="deck-status" id="deck-status"></div>
+            <small>In the print dialog choose “Save as PDF” (best in Chrome)</small>
+            <button class="btn btn-save" id="deck-print" disabled>Save as PDF</button>
+            <button class="btn btn-close" id="deck-close">Close</button>
+        </div>
+        <div class="deck-scroll" id="deck-scroll">
+            <div class="deck-sizer" id="deck-sizer"><iframe id="deck-frame" title="Presentation preview"></iframe></div>
+        </div>
     </div>
 
     <script>
@@ -279,5 +346,11 @@
     <script src="logo-gravils.js"></script>
     <script src="benchmarks.js"></script>
     <script src="app.js"></script>
+    <script src="deck-assets.js"></script>
+    <script src="deck.js"></script>
+    <script src="deck-ui.js"></script>
+    <script src="deck-mobx-assets.js"></script>
+    <script src="deck-mobx.js"></script>
+    <script src="deck-mobx-ui.js"></script>
 </body>
 </html>
