@@ -34,6 +34,7 @@ const K_FLOOR = 0.45;
 const MAX_SLIDES = 10;
 const CARD_TOP = 410;           // top of the table cards
 const SUM_H = 142, SUM_GAP = 22, SLIDE_BOTTOM = 1030;
+const SIDE_W = 1784, SIDE_GAP = 56, SIDE_W1 = 850;   // two cards side by side: 850 + 934, divider in the 56px gap
 
 const A = () => window.MOBX_DECK_ASSETS || {};
 
@@ -87,22 +88,24 @@ body{font-family:"Golos Text",Arial,sans-serif;color:${INK};-webkit-print-color-
 .card{position:absolute;background:#fff;border-radius:24px;padding:18px 20px}
 .shade{position:absolute}
 
-table.mt{--k:1;width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
-.mt th{height:calc(54px*var(--k));background:${BLUE};color:${BG};font-weight:500;font-size:calc(var(--hf)*var(--k));line-height:1.06;text-align:center;padding:0 calc(var(--df)*0.75*var(--k));vertical-align:middle}
-.mt.k th{background:${INK}}
-.mt th:first-child{border-radius:calc(27px*var(--k)) 0 0 calc(27px*var(--k))}
-.mt th:last-child{border-radius:0 calc(27px*var(--k)) calc(27px*var(--k)) 0}
+table.mt{--k:1;position:relative;width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
+.mt th{height:calc(54px*var(--k));color:${BG};font-weight:500;font-size:calc(var(--hf)*var(--k));line-height:1.06;text-align:center;padding:calc(7px*var(--k)) calc(var(--df)*0.75*var(--k));vertical-align:middle}
+/* the header pill and the total-row outline are single shapes behind the table: per-cell fills leave hairline seams in PDF viewers */
+.rowpill{position:absolute;border-radius:999px}
+.rowpill.hd{background:${BLUE}}
+.rowpill.hd.k{background:${INK}}
+.rowpill.tt{border:2px solid ${BLUE}}
+.rowpill.tt.k{border-color:${INK}}
 .mt td{height:calc(52px*var(--k));font-size:calc(var(--df)*var(--k));line-height:1;text-align:center;white-space:nowrap;padding:0 calc(var(--df)*0.75*var(--k));border-bottom:2px solid ${LINE};vertical-align:middle}
 .mt th:first-child,.mt td:first-child{padding-left:calc(24px*var(--k))}
 .mt tr.gb td{border-bottom-color:${INK}}
 .mt tr.last td{border-bottom-color:transparent}
 .mt.lead th:first-child,.mt.lead td:first-child{text-align:left}
 .mt.lead tbody tr:not(.tot) td:first-child{font-weight:500}
-.mt tr.tot td{height:calc(54px*var(--k));font-weight:500;color:${BLUE};border-top:2px solid ${BLUE};border-bottom:2px solid ${BLUE}}
-.mt.k tr.tot td{color:${INK};border-color:${INK}}
-.mt tr.tot td:first-child{border-left:2px solid ${BLUE};border-radius:calc(27px*var(--k)) 0 0 calc(27px*var(--k))}
-.mt tr.tot td:last-child{border-right:2px solid ${BLUE};border-radius:0 calc(27px*var(--k)) calc(27px*var(--k)) 0}
-.mt.k tr.tot td:first-child,.mt.k tr.tot td:last-child{border-color:${INK}}
+.mt tr.tot td{height:calc(54px*var(--k));font-weight:500;color:${BLUE};border-top:2px solid transparent;border-bottom:2px solid transparent}
+.mt.k tr.tot td{color:${INK}}
+.mt tr.tot td:first-child{border-left:2px solid transparent}
+.mt tr.tot td:last-child{border-right:2px solid transparent}
 .mt.lead tr.tot td:first-child{padding-left:calc(22px*var(--k))}
 
 /* budget cards */
@@ -237,7 +240,7 @@ function cellHtml(c) { return esc(c); }
 function buildTable(doc, g, withTotal, hf, df) {
     const t = h(doc, 'table', { class: 'mt' + (g.kind === 'k' ? ' k' : '') + (g.lead ? ' lead' : ''), style: `--hf:${hf}px;--df:${df}px` });
     const thead = h(doc, 'thead'), trh = h(doc, 'tr');
-    g.cols.forEach(c => trh.appendChild(h(doc, 'th', null, esc(c))));
+    g.cols.forEach(c => trh.appendChild(h(doc, 'th', null, `<span>${esc(c)}</span>`)));
     thead.appendChild(trh);
     t.appendChild(thead);
     const tb = h(doc, 'tbody');
@@ -339,7 +342,7 @@ function buildPlanSlide(doc, data, spec) {
         s.appendChild(sec);
         const card = h(doc, 'div', { class: 'card', style: `left:${x}px;top:${CARD_TOP}px;width:${w}px` });
         card.appendChild(buildTable(doc, g, spec.withTotal, g.kind === 'k' ? 16 : 17, g.kind === 'k' ? 18 : 19));
-        cards.push({ card, x, w });
+        cards.push({ card, x, w, sec });
     });
     const shadeHost = h(doc, 'div', { class: 'abs', style: 'left:0;top:0' });
     s.appendChild(shadeHost);
@@ -388,18 +391,69 @@ function settleChrome(s) {
     }, 0.02);
 }
 
-/** Apply table scale k; returns true when everything fits. */
-function applyScale(s, k) {
+/** Most lines any header cell of the table wraps into. */
+function headerLines(t) {
+    let n = 1;
+    t.querySelectorAll('th > span').forEach(sp => { n = Math.max(n, sp.getClientRects().length); });
+    return n;
+}
+/** Apply table scale k; returns true when everything fits (strict: headers in at most 2 lines). */
+function applyScale(s, k, strict) {
     const bottomLimit = s._sum ? SLIDE_BOTTOM - SUM_H - SUM_GAP : SLIDE_BOTTOM;
     let ok = true, maxBottom = CARD_TOP;
+    s._cards.forEach(({ card }) => card.querySelector('table').style.setProperty('--k', k));
+    if (s._cards.length === 2) placeSide(s);
     s._cards.forEach(({ card }) => {
         const t = card.querySelector('table');
-        t.style.setProperty('--k', k);
         if (t.offsetWidth > card.clientWidth - 40 + 0.5) ok = false;          // wider than the card
+        if (strict && headerLines(t) > 2) ok = false;                         // header text in 3+ lines
         maxBottom = Math.max(maxBottom, CARD_TOP + card.offsetHeight);
     });
     if (maxBottom > bottomLimit + 0.5) ok = false;
     return ok;
+}
+function minWidth(t) {
+    const prev = t.style.width;
+    t.style.width = 'min-content';
+    const w = t.getBoundingClientRect().width;
+    t.style.width = prev;
+    return w;
+}
+function setSide(s, w1) {
+    const [c1, c2] = s._cards;
+    const w2 = SIDE_W - w1, x2 = 40 + w1 + SIDE_GAP;
+    c1.w = w1; c1.card.style.width = w1 + 'px';
+    c2.x = x2; c2.w = w2; c2.card.style.left = x2 + 'px'; c2.card.style.width = w2 + 'px';
+    c2.sec.style.left = (x2 + 8) + 'px';
+    if (s._divider) s._divider.style.left = (40 + w1 + SIDE_GAP / 2) + 'px';
+}
+/** Two tables side by side: the reference split (850 / 934) when both tables fit it with
+    headers in at most 2 lines; otherwise the divider moves and the spare room is shared
+    between the tables in proportion to their width. */
+function placeSide(s) {
+    const [c1, c2] = s._cards;
+    const t1 = c1.card.querySelector('table'), t2 = c2.card.querySelector('table');
+    const n1 = Math.ceil(minWidth(t1)) + 40, n2 = Math.ceil(minWidth(t2)) + 40;
+    setSide(s, SIDE_W1);
+    const fitsReference = n1 <= SIDE_W1 && n2 <= SIDE_W - SIDE_W1 && headerLines(t1) <= 2 && headerLines(t2) <= 2;
+    if (!fitsReference && n1 + n2 <= SIDE_W) setSide(s, Math.round(n1 + (SIDE_W - n1 - n2) * n1 / (n1 + n2)));
+}
+/** Header pill and total-row outline: one shape each, placed under the table rows. */
+function paintRowPills(card) {
+    const doc = card.ownerDocument;
+    card.querySelectorAll('.rowpill').forEach(e => e.remove());
+    const t = card.querySelector('table');
+    const cr = card.getBoundingClientRect();
+    const z = cr.width / card.offsetWidth || 1;
+    const tone = t.classList.contains('k') ? ' k' : '';
+    const add = (row, cls) => {
+        if (!row) return;
+        const r = row.getBoundingClientRect();
+        card.insertBefore(h(doc, 'div', { class: 'rowpill ' + cls + tone,
+            style: `left:${(r.left - cr.left) / z}px;top:${(r.top - cr.top) / z}px;width:${r.width / z}px;height:${r.height / z}px` }), card.firstChild);
+    };
+    add(t.tHead && t.tHead.rows[0], 'hd');
+    add(t.querySelector('tr.tot'), 'tt');
 }
 /** After the scale is fixed: shadows, divider, budget cards under the tables. */
 function finishPlan(s) {
@@ -407,6 +461,7 @@ function finishPlan(s) {
     let maxBottom = CARD_TOP;
     s._shadeHost.innerHTML = '';
     s._cards.forEach(({ card, x, w }) => {
+        paintRowPills(card);
         const hgt = card.offsetHeight;
         maxBottom = Math.max(maxBottom, CARD_TOP + hgt);
         s._shadeHost.appendChild(shadow(doc, x, CARD_TOP, w, hgt, 24));
@@ -448,19 +503,28 @@ function expandOption(plan, k, layout) {
     specs.forEach((sp, i) => { sp.isLast = i === specs.length - 1; });
     return specs;
 }
-function evaluate(doc, data, specs) {
+function evaluate(doc, data, specs, strict) {
     let min = Infinity;
     for (const sp of specs) {
         const s = buildPlanSlide(doc, data, sp);
         s.classList.add('measure');
         doc.body.appendChild(s);
         settleChrome(s);
-        const r = searchMax(K_FLOOR, 1, k => applyScale(s, k), 0.01);
+        const r = searchMax(K_FLOOR, 1, k => applyScale(s, k, strict), 0.01);
         s.remove();
         min = Math.min(min, r.value);
         if (min < K_FLOOR + 0.005) break;
     }
     return min;
+}
+/** Best scale for an option: headers in at most 2 lines when that stays readable, otherwise any wrap. */
+function evaluateOption(doc, data, o) {
+    o.strict = true;
+    o.scale = evaluate(doc, data, o.specs, true);
+    if (window.__mobxDeckDebug) console.log('strict', o.layout, o.k, o.scale);
+    if (o.scale >= K_MIN) return;
+    o.strict = false;
+    o.scale = evaluate(doc, data, o.specs, false);
 }
 function planTables(doc, data) {
     const plan = data.plan;
@@ -481,7 +545,7 @@ function planTables(doc, data) {
         while (i < options.length && options[i].slides === count) group.push(options[i++]);
         for (const o of group) {
             o.specs = expandOption(plan, o.k, o.layout);
-            o.scale = evaluate(doc, data, o.specs);
+            evaluateOption(doc, data, o);
             if (!fallback || o.scale > fallback.scale + 0.001) fallback = o;
         }
         const ok = group.filter(o => o.scale >= K_MIN);
@@ -526,7 +590,7 @@ async function render(doc, data) {
         const s = buildPlanSlide(doc, data, sp);
         doc.body.appendChild(s);
         settleChrome(s);
-        applyScale(s, scale);          // same table size on every plan slide
+        applyScale(s, scale, option.strict);          // same table size on every plan slide
         finishPlan(s);
     });
     const closing = buildClosing(doc, data);
@@ -542,6 +606,7 @@ async function render(doc, data) {
         scale: Math.round(scale * 100) / 100,
         fontPx: Math.round(19 * scale * 10) / 10,
         readable,
+        headersTwoLines: !!option.strict,
         overflow: checkOverflow(doc)
     };
 }
